@@ -30,8 +30,8 @@ export default async function handler(req, res) {
             },
             body: JSON.stringify({
                 model: "gpt-4o-realtime-preview-2024-10-01", // Il tuo modello target
-                voice: "alloy", // Scegli una voce: alloy, echo, fable, onyx, nova, shimmer
-                // Esempio: instructions: "Sei un assistente AI amichevole. Rispondi in italiano."
+                voice: "shimmer", // Scegli una voce: alloy, echo, fable, onyx, nova, shimmer
+                // Esempio: instructions: "Sei un assistente AI amichevole. Rispondi in italiano. Sii divertente. Fai tante risate."
             }),
         });
 
