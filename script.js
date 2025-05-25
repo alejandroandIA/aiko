@@ -1,4 +1,3 @@
-// File: script.js
 const startButton = document.getElementById('startButton');
 const stopButton = document.getElementById('stopButton');
 const statusDiv = document.getElementById('status');
@@ -6,11 +5,11 @@ const transcriptsDiv = document.getElementById('transcripts');
 const aiAudioPlayer = document.getElementById('aiAudioPlayer');
 
 const MODEL_NAME = "gpt-4o-realtime-preview-2024-10-01";
-const BACKEND_API_ENDPOINT = "/api/session"; // Vercel instraderà questo a api/session.js
+const BACKEND_API_ENDPOINT = "/api/session";
 
-let pc; // RTCPeerConnection
-let dc; // RTCDataChannel
-let localStream; // MediaStream dal microfono
+let pc;
+let dc;
+let localStream;
 let currentAIResponseId = null; 
 
 async function getEphemeralToken() {
@@ -50,12 +49,9 @@ async function startConversation() {
         pc = new RTCPeerConnection();
 
         pc.ontrack = (event) => {
-            console.log("Traccia remota ricevuta:", event.streams[0]);
             if (event.streams && event.streams[0]) {
                 aiAudioPlayer.srcObject = event.streams[0];
-                aiAudioPlayer.play().catch(e => console.warn("Errore riproduzione audio AI automatica:", e));
-            } else {
-                console.warn("Traccia remota ricevuta ma senza stream validi.");
+                aiAudioPlayer.play().catch(e => {});
             }
         };
 
@@ -72,16 +68,14 @@ async function startConversation() {
 
         dc = pc.createDataChannel("oai-events", { ordered: true });
         dc.onopen = () => {
-            console.log("Data channel aperto.");
             statusDiv.textContent = "Connesso. In attesa...";
-            // AGGIORNAMENTO PER SEMANTIC_VAD E TONO UMANO
             sendClientEvent({
                 type: "session.update",
                 session: {
                     instructions: "Sei un assistente AI amichevole, empatico e conciso. Rispondi sempre in italiano e cerca di avere un tono di voce naturale e umano.",
                     turn_detection: {
-                        type: "semantic_vad",     // MODIFICATO QUI
-                        eagerness: "low",          // AGGIUNTO QUI per un comportamento meno "ansioso"
+                        type: "semantic_vad",
+                        eagerness: "low",
                         create_response: true, 
                         interrupt_response: true 
                     }
@@ -95,20 +89,15 @@ async function startConversation() {
                 console.error("Errore parsing messaggio server:", e, "Dati:", event.data);
             }
         };
-        dc.onclose = () => {
-            console.log("Data channel chiuso.");
-        };
+        dc.onclose = () => {};
         dc.onerror = (error) => {
             console.error("Errore Data channel:", error);
             statusDiv.textContent = "Errore Data channel.";
         };
 
-        pc.onicecandidate = (event) => {
-            // Normalmente non serve fare nulla qui
-        };
+        pc.onicecandidate = (event) => {};
 
         pc.onconnectionstatechange = () => {
-            console.log("Stato connessione WebRTC:", pc.connectionState);
             if (pc.connectionState === "failed" || pc.connectionState === "disconnected" || pc.connectionState === "closed") {
                 statusDiv.textContent = `Connessione WebRTC: ${pc.connectionState}. Prova a riavviare.`;
                 if (pc.connectionState !== "closed") stopConversation(); 
@@ -136,7 +125,6 @@ async function startConversation() {
         const answerSdp = await sdpResponse.text();
         await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
 
-        console.log("Connessione WebRTC stabilita con OpenAI.");
     } catch (error) {
         console.error("Errore durante l'avvio della conversazione:", error);
         statusDiv.textContent = `Errore avvio: ${error.message}`;
@@ -167,10 +155,7 @@ function stopConversation() {
 
 function sendClientEvent(event) {
     if (dc && dc.readyState === "open") {
-        console.log("Invio evento client:", event);
         dc.send(JSON.stringify(event));
-    } else {
-        console.warn("Data channel non pronto per inviare l'evento:", event.type, dc ? dc.readyState : 'dc nullo');
     }
 }
 
@@ -202,14 +187,11 @@ function appendToTranscript(speaker, textDelta, itemId) {
 }
 
 function handleServerEvent(event) {
-    console.log("Evento server ricevuto:", event.type, event);
-
     switch (event.type) {
         case "session.created":
             statusDiv.textContent = `Sessione ${event.session.id.slice(-4)} creata. Parla pure!`;
             break;
         case "session.updated":
-            console.log("Sessione aggiornata:", event.session);
             break;
         case "input_audio_buffer.speech_started":
             statusDiv.textContent = "Ti sto ascoltando...";
@@ -234,7 +216,6 @@ function handleServerEvent(event) {
             break;
         case "response.done":
             statusDiv.textContent = "Risposta AI completata. Parla pure!";
-            console.log("Risposta AI completa:", event.response);
             currentAIResponseId = null;
             break;
         case "error":
