@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIKO</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Conversazione Realtime con AI</h1>
+        <div id="controls">
+            <button id="startButton">Avvia Conversazione</button>
+            <button id="stopButton" disabled>Termina Conversazione</button>
+        </div>
+        <div id="status">Pronto. Clicca "Avvia" per iniziare.</div>
+        <div class="transcript-container">
+            <h2>Trascrizioni:</h2>
+            <div id="transcripts">
+                <!-- Le trascrizioni appariranno qui -->
+            </div>
+        </div>
+        <audio id="aiAudioPlayer" autoplay></audio>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
