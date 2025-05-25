@@ -152,26 +152,41 @@ async function startConversation() {
 }
 
 async function saveCurrentSessionHistoryAndStop() {
+    console.log("DEBUG: saveCurrentSessionHistoryAndStop CHIAMATA!"); // <--- CONSOLE.LOG AGGIUNTO
+    console.log("DEBUG: Contenuto di currentConversationHistory all'inizio di save:", JSON.stringify(currentConversationHistory, null, 2)); // <--- CONSOLE.LOG AGGIUNTO
+
     if (currentConversationHistory.length > 0) {
         statusDiv.textContent = "Salvataggio conversazione...";
+        console.log("DEBUG: Inizio salvataggio ciclo for..."); // <--- CONSOLE.LOG AGGIUNTO
         for (const entry of currentConversationHistory) {
+            console.log("DEBUG: Tento di salvare:", JSON.stringify(entry)); // <--- CONSOLE.LOG AGGIUNTO
             try {
-                await fetch(SAVE_MEMORY_API_ENDPOINT, {
+                const saveResponse = await fetch(SAVE_MEMORY_API_ENDPOINT, { // <--- Aggiunto await e gestione risposta
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ speaker: entry.speaker, content: entry.text })
                 });
+                if (!saveResponse.ok) {
+                    const errorData = await saveResponse.json().catch(() => ({ error: "Errore sconosciuto nel salvataggio" }));
+                    console.error(`DEBUG: Errore dal server saveToMemory (${saveResponse.status}):`, errorData);
+                } else {
+                    console.log("DEBUG: Messaggio salvato con successo:", entry.text);
+                }
             } catch (saveError) {
-                console.error("Errore durante il salvataggio di un messaggio:", saveError);
+                console.error("DEBUG: Errore fetch durante il salvataggio di un messaggio:", saveError);
             }
         }
+        console.log("DEBUG: Fine salvataggio ciclo for."); // <--- CONSOLE.LOG AGGIUNTO
         currentConversationHistory = [];
-        statusDiv.textContent = "Conversazione salvata.";
+        statusDiv.textContent = "Conversazione salvata (o tentativo completato)."; // Modificato per chiarezza
+    } else {
+        console.log("DEBUG: currentConversationHistory è vuoto, nessun salvataggio da fare."); // <--- CONSOLE.LOG AGGIUNTO
     }
     stopConversation();
 }
 
 function stopConversation() {
+    console.log("DEBUG: stopConversation CHIAMATA!"); // <--- CONSOLE.LOG AGGIUNTO (per vedere se viene chiamata anche da altre parti)
     if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
         localStream = null;
@@ -211,6 +226,7 @@ function addTranscript(speaker, text, itemId) {
     transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight; 
 
     if (speaker === "Tu" || speaker === "AI") {
+        console.log(`DEBUG: Aggiungo a history (addTranscript): ${speaker} - ${text.substring(0,30)}...`); // <--- CONSOLE.LOG AGGIUNTO
         currentConversationHistory.push({ speaker, text });
     }
 }
@@ -218,22 +234,26 @@ function addTranscript(speaker, text, itemId) {
 function appendToTranscript(speaker, textDelta, itemId) {
     const id = `${speaker}-${itemId || 'general'}`;
     let transcriptDiv = document.getElementById(id);
+    let isNewEntryForHistory = false;
     if (!transcriptDiv) {
         transcriptDiv = document.createElement('div');
         transcriptDiv.id = id;
         transcriptDiv.className = speaker.toLowerCase();
         transcriptDiv.textContent = `${speaker}: `;
         transcriptsDiv.appendChild(transcriptDiv);
+        if (speaker === "AI") isNewEntryForHistory = true; // Se il div è nuovo per l'AI, è un nuovo messaggio
     }
     transcriptDiv.textContent += textDelta;
     transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight;
 
-    if (speaker === "AI" && currentConversationHistory.length > 0) {
-        const lastEntry = currentConversationHistory[currentConversationHistory.length - 1];
-        if (lastEntry.speaker === "AI" && transcriptDiv.textContent.startsWith(`${speaker}: `)) {
-            lastEntry.text = transcriptDiv.textContent.substring(`${speaker}: `.length);
-        } else if (lastEntry.speaker !== "AI") {
-             currentConversationHistory.push({ speaker: "AI", text: textDelta });
+    if (speaker === "AI") {
+        const lastEntry = currentConversationHistory.length > 0 ? currentConversationHistory[currentConversationHistory.length - 1] : null;
+        if (isNewEntryForHistory || !lastEntry || lastEntry.speaker !== "AI") {
+            console.log(`DEBUG: Nuovo messaggio AI a history (appendToTranscript): ${textDelta.substring(0,30)}...`); // <--- CONSOLE.LOG AGGIUNTO
+            currentConversationHistory.push({ speaker: "AI", text: textDelta });
+        } else if (lastEntry.speaker === "AI") {
+            lastEntry.text += textDelta; // Appendi al testo dell'ultimo messaggio AI
+            // console.log(`DEBUG: Aggiorno history AI: ${lastEntry.text.substring(0,30)}...`); // Molto verboso, opzionale
         }
     }
 }
@@ -241,15 +261,20 @@ function appendToTranscript(speaker, textDelta, itemId) {
 async function handleFunctionCall(functionCall) {
     if (functionCall.name === "cerca_nella_mia_memoria_personale") {
         statusDiv.textContent = "Ok, fammi cercare nei miei ricordi...";
+        console.log("DEBUG: handleFunctionCall - Chiamo cerca_nella_mia_memoria_personale"); // <--- CONSOLE.LOG AGGIUNTO
         try {
             const args = JSON.parse(functionCall.arguments);
             const searchQuery = args.termini_di_ricerca;
+            console.log("DEBUG: Termini di ricerca per la memoria:", searchQuery); // <--- CONSOLE.LOG AGGIUNTO
 
             const searchResponse = await fetch(`${SEARCH_MEMORY_API_ENDPOINT}?query=${encodeURIComponent(searchQuery)}`);
             if (!searchResponse.ok) {
+                const errorData = await searchResponse.json().catch(() => ({error: "Errore sconosciuto dal server ricerca memoria"}));
+                console.error("DEBUG: Errore da searchMemory API:", errorData); // <--- CONSOLE.LOG AGGIUNTO
                 throw new Error(`Errore dal server di ricerca memoria: ${searchResponse.status}`);
             }
             const searchData = await searchResponse.json();
+            console.log("DEBUG: Risultati da searchMemory API:", searchData); // <--- CONSOLE.LOG AGGIUNTO
             
             sendClientEvent({
                 type: "conversation.item.create",
@@ -263,7 +288,7 @@ async function handleFunctionCall(functionCall) {
             statusDiv.textContent = "Ho cercato. Ora formulo una risposta...";
 
         } catch (e) {
-            console.error("Errore durante la chiamata di funzione searchMemory:", e);
+            console.error("DEBUG: Errore durante la chiamata di funzione searchMemory (catch):", e); // <--- CONSOLE.LOG AGGIUNTO
             sendClientEvent({
                 type: "conversation.item.create",
                 item: {
@@ -279,6 +304,8 @@ async function handleFunctionCall(functionCall) {
 }
 
 function handleServerEvent(event) {
+    // console.log("DEBUG: Evento server ricevuto:", event.type, event); // Molto verboso, decommenta se necessario
+
     switch (event.type) {
         case "session.created":
             statusDiv.textContent = `Sessione ${event.session.id.slice(-4)} creata. Parla pure!`;
