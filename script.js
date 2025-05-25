@@ -74,15 +74,16 @@ async function startConversation() {
         dc.onopen = () => {
             console.log("Data channel aperto.");
             statusDiv.textContent = "Connesso. In attesa...";
+            // AGGIORNAMENTO PER SEMANTIC_VAD E TONO UMANO
             sendClientEvent({
                 type: "session.update",
                 session: {
-                    instructions: "Sei un assistente AI amichevole e conciso. Rispondi sempre in italiano.",
+                    instructions: "Sei un assistente AI amichevole, empatico e conciso. Rispondi sempre in italiano e cerca di avere un tono di voce naturale e umano.",
                     turn_detection: {
-                        type: "server_vad", 
-                        threshold: 0.5,
-                        silence_duration_ms: 800,
+                        type: "semantic_vad",     // MODIFICATO QUI
+                        eagerness: "low",          // AGGIUNTO QUI per un comportamento meno "ansioso"
                         create_response: true, 
+                        interrupt_response: true 
                     }
                 }
             });
