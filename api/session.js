@@ -1,9 +1,5 @@
-// File: api/session.js
-// NOTA: "import fetch from "node-fetch";" è stato RIMOSSO.
-// Si assume che la versione Node.js su Vercel abbia fetch globale.
-
 export default async function handler(req, res) {
-    if (req.method === 'OPTIONS') { // Gestione preflight CORS
+    if (req.method === 'OPTIONS') {
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -22,16 +18,16 @@ export default async function handler(req, res) {
     }
 
     try {
-        const openAIResponse = await fetch("https://api.openai.com/v1/realtime/sessions", { // fetch è usato direttamente
+        const openAIResponse = await fetch("https://api.openai.com/v1/realtime/sessions", {
             method: "POST",
             headers: {
                 "Authorization": `Bearer ${OPENAI_API_KEY}`,
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({
-                model: "gpt-4o-realtime-preview-2024-10-01", // Il tuo modello target
-                voice: "shimmer", // Scegli una voce: alloy, echo, fable, onyx, nova, shimmer
-                // Esempio: instructions: "Sei un assistente AI amichevole. Rispondi in italiano. Sii divertente. Fai tante risate."
+                model: "gpt-4o-realtime-preview-2024-12-17",
+                voice: "shimmer",
+                instructions: "Sei un assistente AI amichevole. Rispondi in italiano. Sii divertente. Fai tante risate."
             }),
         });
 
