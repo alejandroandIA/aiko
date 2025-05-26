@@ -1,3 +1,4 @@
+// script.js
 const startButton = document.getElementById('startButton');
 const stopButton = document.getElementById('stopButton');
 const statusDiv = document.getElementById('status');
@@ -8,6 +9,7 @@ const MODEL_NAME = "gpt-4o-realtime-preview-2024-12-17";
 const SESSION_API_ENDPOINT = "/api/session";
 const SAVE_MEMORY_API_ENDPOINT = "/api/saveToMemory";
 const SEARCH_MEMORY_API_ENDPOINT = "/api/searchMemory";
+const SUMMARY_API_ENDPOINT = "/api/generateContextSummary"; // Nuovo
 
 let pc;
 let dc;
@@ -15,13 +17,39 @@ let localStream;
 let currentAIResponseId = null;
 let currentConversationHistory = [];
 
-async function getEphemeralToken() {
+async function getContextSummary() {
+    console.log("DEBUG: Richiesta riassunto del contesto...");
+    statusDiv.textContent = "Recupero contesto precedente...";
+    try {
+        const response = await fetch(SUMMARY_API_ENDPOINT);
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.warn(`Errore dal backend per il riassunto (${response.status}):`, errorData.error || 'Errore sconosciuto');
+            return "";
+        }
+        const data = await response.json();
+        console.log("DEBUG: Riassunto del contesto ricevuto (o messaggio se vuoto):", data.summary);
+        return data.summary || "";
+    } catch (error) {
+        console.warn("Errore durante il recupero del riassunto del contesto:", error);
+        return "";
+    }
+}
+
+async function getEphemeralToken(contextSummary) {
     statusDiv.textContent = "Richiesta token di sessione...";
     try {
-        const response = await fetch(SESSION_API_ENDPOINT);
+        const response = await fetch(SESSION_API_ENDPOINT, {
+            method: 'POST', // Cambiato a POST
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ contextSummary: contextSummary })
+        });
+
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(`Errore dal backend (${response.status}): ${errorData.error || 'Errore sconosciuto'}`);
+            throw new Error(`Errore dal backend per il token (${response.status}): ${errorData.error || 'Errore sconosciuto'}`);
         }
         const data = await response.json();
         if (!data.client_secret) {
@@ -38,14 +66,16 @@ async function getEphemeralToken() {
 async function startConversation() {
     startButton.disabled = true;
     stopButton.disabled = false;
-    statusDiv.textContent = "Avvio conversazione...";
     transcriptsDiv.innerHTML = "";
     currentAIResponseId = null;
     currentConversationHistory = [];
     console.log("DEBUG: Nuova conversazione iniziata, currentConversationHistory resettato.");
 
     try {
-        const ephemeralKey = await getEphemeralToken();
+        const summary = await getContextSummary(); // Ottieni prima il riassunto
+        statusDiv.textContent = "Riassunto ottenuto, richiedo sessione...";
+
+        const ephemeralKey = await getEphemeralToken(summary); // Passa il riassunto
         if (!ephemeralKey) {
             stopConversation();
             return;
@@ -74,10 +104,11 @@ async function startConversation() {
         dc = pc.createDataChannel("oai-events", { ordered: true });
         dc.onopen = () => {
             statusDiv.textContent = "Connesso. In attesa...";
-            sendClientEvent({
+            sendClientEvent({ // Le istruzioni ora sono gestite principalmente in api/session.js
                 type: "session.update",
                 session: {
-                    instructions: "Sei un assistente AI amichevole e conciso. Rispondi in italiano. Puoi cercare nelle conversazioni passate se ti viene chiesto di ricordare qualcosa, usando lo strumento 'cerca_nella_mia_memoria_personale'.",
+                    // Le istruzioni dettagliate sono ora in api/session.js, qui possiamo inviare solo aggiornamenti se necessario
+                    // o configurare i tools se non sono già nella sessione base
                     turn_detection: {
                         type: "server_vad",
                         threshold: 0.5,
@@ -87,13 +118,13 @@ async function startConversation() {
                     tools: [{
                         type: "function",
                         name: "cerca_nella_mia_memoria_personale",
-                        description: "Cerca nelle conversazioni passate dell'utente per trovare informazioni specifiche o rispondere a domande su eventi precedenti.",
+                        description: "Cerca nelle conversazioni passate dell'utente Alejandro per trovare informazioni specifiche, dettagli personali, preferenze o rispondere a domande su eventi precedenti.",
                         parameters: {
                             type: "object",
                             properties: {
                                 termini_di_ricerca: {
                                     type: "string",
-                                    description: "Le parole chiave o la domanda specifica da cercare nella cronologia delle conversazioni passate."
+                                    description: "Le parole chiave o la domanda specifica da cercare nella cronologia delle conversazioni passate con Alejandro."
                                 }
                             },
                             required: ["termini_di_ricerca"]
@@ -109,9 +140,7 @@ async function startConversation() {
                 console.error("Errore parsing messaggio server:", e, "Dati:", event.data);
             }
         };
-        dc.onclose = () => {
-            console.log("DEBUG: Data channel chiuso.");
-        };
+        dc.onclose = () => console.log("DEBUG: Data channel chiuso.");
         dc.onerror = (error) => {
             console.error("Errore Data channel:", error);
             statusDiv.textContent = "Errore Data channel.";
@@ -147,7 +176,6 @@ async function startConversation() {
             const errorText = await sdpResponse.text();
             throw new Error(`Errore SDP OpenAI (${sdpResponse.status}): ${errorText}`);
         }
-
         const answerSdp = await sdpResponse.text();
         await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
 
@@ -164,50 +192,40 @@ async function saveCurrentSessionHistoryAndStop() {
 
     if (currentConversationHistory.length > 0) {
         statusDiv.textContent = "Salvataggio conversazione...";
-        console.log("DEBUG (saveCurrentSessionHistoryAndStop): Inizio ciclo di salvataggio...");
         let entriesSavedCount = 0;
         for (const entry of currentConversationHistory) {
-            console.log("DEBUG (saveCurrentSessionHistoryAndStop): Analizzo entry per salvataggio:", JSON.stringify(entry));
-
             const isValidForSaving = entry &&
                                      typeof entry.speaker === 'string' && entry.speaker.trim() !== '' &&
                                      typeof entry.content === 'string' && entry.content.trim() !== '';
-
             if (!isValidForSaving) {
-                console.warn("DEBUG (saveCurrentSessionHistoryAndStop - SALTO ENTRY): Entry non valida o con speaker/content vuoto:", entry);
+                console.warn("DEBUG (saveCurrentSessionHistoryAndStop - SALTO ENTRY):", entry);
                 continue;
             }
-
-            console.log("DEBUG (saveCurrentSessionHistoryAndStop): Tento di salvare entry VALIDA:", JSON.stringify(entry));
             try {
                 const requestBody = { speaker: entry.speaker, content: entry.content };
-
                 const saveResponse = await fetch(SAVE_MEMORY_API_ENDPOINT, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestBody)
                 });
-
                 if (!saveResponse.ok) {
-                    const errorData = await saveResponse.json().catch(() => ({ error: "Errore sconosciuto nel salvataggio", details: `Status: ${saveResponse.status}` }));
-                    console.error(`DEBUG (saveCurrentSessionHistoryAndStop): Errore dal server saveToMemory (${saveResponse.status}):`, errorData, "Per entry:", entry);
+                    const errorData = await saveResponse.json().catch(() => ({}));
+                    console.error(`DEBUG (saveCurrentSessionHistoryAndStop): Errore server saveToMemory (${saveResponse.status}):`, errorData, "Per entry:", entry);
                 } else {
                     entriesSavedCount++;
                     const responseData = await saveResponse.json();
-                    console.log(`DEBUG (saveCurrentSessionHistoryAndStop): Messaggio "${entry.content.substring(0,20)}..." salvato. Risposta server:`, responseData.message);
+                    console.log(`DEBUG (saveCurrentSessionHistoryAndStop): Entry salvata. Server:`, responseData.message);
                 }
             } catch (saveError) {
-                console.error("DEBUG (saveCurrentSessionHistoryAndStop): Errore fetch durante il salvataggio:", saveError, "Per entry:", entry);
+                console.error("DEBUG (saveCurrentSessionHistoryAndStop): Errore fetch salvataggio:", saveError, "Per entry:", entry);
             }
         }
-        console.log(`DEBUG (saveCurrentSessionHistoryAndStop): Fine ciclo di salvataggio. ${entriesSavedCount} entries inviate per il salvataggio.`);
+        console.log(`DEBUG (saveCurrentSessionHistoryAndStop): ${entriesSavedCount} entries inviate.`);
         currentConversationHistory = [];
-        console.log("DEBUG (saveCurrentSessionHistoryAndStop): currentConversationHistory resettato dopo il tentativo di salvataggio.");
-        statusDiv.textContent = "Tentativo di salvataggio completato.";
     } else {
-        console.log("DEBUG (saveCurrentSessionHistoryAndStop): currentConversationHistory è vuoto, nessun salvataggio necessario.");
-        statusDiv.textContent = "Nessuna conversazione da salvare.";
+        console.log("DEBUG (saveCurrentSessionHistoryAndStop): History vuota, nessun salvataggio.");
     }
+    statusDiv.textContent = "Salvataggio completato (o non necessario).";
     stopConversation();
 }
 
@@ -216,25 +234,16 @@ function stopConversation() {
     if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
         localStream = null;
-        console.log("DEBUG (stopConversation): Tracce localStream fermate.");
     }
-    if (dc && dc.readyState !== "closed") {
-        dc.close();
-        console.log("DEBUG (stopConversation): Data channel chiuso.");
-    }
+    if (dc && dc.readyState !== "closed") dc.close();
     dc = null;
-    if (pc && pc.connectionState !== "closed") {
-        pc.close();
-        console.log("DEBUG (stopConversation): PeerConnection chiuso.");
-    }
+    if (pc && pc.connectionState !== "closed") pc.close();
     pc = null;
-
     startButton.disabled = false;
     stopButton.disabled = true;
-    statusDiv.textContent = "Conversazione terminata. Pronto per iniziare una nuova.";
+    statusDiv.textContent = "Conversazione terminata.";
     if (aiAudioPlayer) aiAudioPlayer.srcObject = null;
     currentAIResponseId = null;
-    console.log("DEBUG (stopConversation): Stato UI resettato.");
 }
 
 function sendClientEvent(event) {
@@ -244,8 +253,7 @@ function sendClientEvent(event) {
 }
 
 function addTranscript(speaker, textContent, itemId) {
-    console.log(`DEBUG (addTranscript - ENTRATA): Speaker='${speaker}', textContent='${textContent}', typeof textContent='${typeof textContent}', itemId='${itemId}'`);
-
+    console.log(`DEBUG (addTranscript - ENTRATA): Speaker='${speaker}', Content='${textContent}', itemId='${itemId}'`);
     const id = `${speaker}-${itemId || 'general'}`;
     let transcriptDiv = document.getElementById(id);
     if (!transcriptDiv) {
@@ -261,17 +269,14 @@ function addTranscript(speaker, textContent, itemId) {
         console.log(`DEBUG (addTranscript - AGGIUNGO A HISTORY): Speaker: ${speaker}, Content: "${textContent}"`);
         currentConversationHistory.push({ speaker, content: textContent });
     } else {
-        console.warn(`DEBUG (addTranscript - SALTO HISTORY): Testo non valido/vuoto o speaker non tracciato. Speaker: ${speaker}, textContent='${textContent}', typeof textContent='${typeof textContent}'`);
+        console.warn(`DEBUG (addTranscript - SALTO HISTORY): Speaker: ${speaker}, Content='${textContent}'`);
     }
 }
 
 function appendToTranscript(speaker, textDelta, itemId) {
-    console.log(`DEBUG (appendToTranscript - ENTRATA): Speaker='${speaker}', textDelta='${textDelta}', typeof textDelta='${typeof textDelta}', itemId='${itemId}'`);
-
     const id = `${speaker}-${itemId || 'general'}`;
     let transcriptDiv = document.getElementById(id);
     let isNewVisualEntry = false;
-
     if (!transcriptDiv) {
         transcriptDiv = document.createElement('div');
         transcriptDiv.id = id;
@@ -285,25 +290,13 @@ function appendToTranscript(speaker, textDelta, itemId) {
 
     if (speaker === "AI") {
         const lastEntryInHistory = currentConversationHistory.length > 0 ? currentConversationHistory[currentConversationHistory.length - 1] : null;
-
         if (isNewVisualEntry || !lastEntryInHistory || lastEntryInHistory.speaker !== "AI") {
             if (typeof textDelta === 'string' && textDelta.trim() !== '') {
-                console.log(`DEBUG (appendToTranscript - NUOVA AI ENTRY IN HISTORY): Delta: "${textDelta}"`);
                 currentConversationHistory.push({ speaker: "AI", content: textDelta });
-            } else if (typeof textDelta === 'string' && textDelta.trim() === '') {
-                 console.log(`DEBUG (appendToTranscript - NUOVA AI ENTRY CON DELTA VUOTO, IGNORO): Delta: "${textDelta}"`);
-            } else {
-                console.warn(`DEBUG (appendToTranscript - NUOVA AI ENTRY CON DELTA NON STRINGA, IGNORO): Delta: ${textDelta}, typeof: ${typeof textDelta}`);
             }
-        }
-        else if (lastEntryInHistory && lastEntryInHistory.speaker === "AI") {
+        } else if (lastEntryInHistory && lastEntryInHistory.speaker === "AI") {
             if (typeof textDelta === 'string' && textDelta.trim() !== '') {
-                console.log(`DEBUG (appendToTranscript - APPENDO AD AI IN HISTORY): Delta: "${textDelta}"`);
                 lastEntryInHistory.content += textDelta;
-            } else if (typeof textDelta === 'string' && textDelta.trim() === '') {
-                 console.log(`DEBUG (appendToTranscript - AI DELTA VUOTO PER APPEND, IGNORO): Delta: "${textDelta}"`);
-            } else {
-                console.warn(`DEBUG (appendToTranscript - AI DELTA NON STRINGA PER APPEND, IGNORO): Delta: ${textDelta}, typeof: ${typeof textDelta}`);
             }
         }
     }
@@ -312,149 +305,97 @@ function appendToTranscript(speaker, textDelta, itemId) {
 async function handleFunctionCall(functionCall) {
     if (functionCall.name === "cerca_nella_mia_memoria_personale") {
         statusDiv.textContent = "Ok, fammi cercare nei miei ricordi...";
-        console.log("DEBUG (handleFunctionCall): Chiamo cerca_nella_mia_memoria_personale. Call ID:", functionCall.call_id, "Args:", functionCall.arguments);
+        console.log("DEBUG (handleFunctionCall): Chiamo cerca_nella_mia_memoria_personale. Args:", functionCall.arguments);
         try {
             const args = JSON.parse(functionCall.arguments);
             const searchQuery = args.termini_di_ricerca;
-            console.log("DEBUG (handleFunctionCall): Termini di ricerca per la memoria:", searchQuery);
-
             addTranscript("Sistema", `Sto cercando nei ricordi: "${searchQuery}"...`, `search-${functionCall.call_id}`);
-
             const searchResponse = await fetch(`${SEARCH_MEMORY_API_ENDPOINT}?query=${encodeURIComponent(searchQuery)}`);
             if (!searchResponse.ok) {
-                const errorData = await searchResponse.json().catch(() => ({error: "Errore sconosciuto dal server ricerca memoria"}));
-                console.error("DEBUG (handleFunctionCall): Errore da searchMemory API:", errorData);
-                addTranscript("Sistema", `Errore durante la ricerca: ${errorData.error || searchResponse.status}`, `search-err-${functionCall.call_id}`);
-                throw new Error(`Errore dal server di ricerca memoria: ${searchResponse.status}`);
+                const errorData = await searchResponse.json().catch(() => ({}));
+                addTranscript("Sistema", `Errore ricerca: ${errorData.error || searchResponse.status}`, `search-err-${functionCall.call_id}`);
+                throw new Error(`Errore server ricerca: ${searchResponse.status}`);
             }
             const searchData = await searchResponse.json();
-            console.log("DEBUG (handleFunctionCall): Risultati da searchMemory API:", searchData);
-
-            const functionOutput = JSON.stringify({ results: searchData.results || "Non ho trovato nulla per quei termini." });
-            addTranscript("Sistema", `Risultato ricerca: ${ (searchData.results && searchData.results.length > 50) ? searchData.results.substring(0,50) + "..." : searchData.results }`, `search-res-${functionCall.call_id}`);
-
-            sendClientEvent({
-                type: "conversation.item.create",
-                item: {
-                    type: "function_call_output",
-                    call_id: functionCall.call_id,
-                    output: functionOutput
-                }
-            });
+            const functionOutput = JSON.stringify({ results: searchData.results || "Nessun ricordo trovato." });
+            addTranscript("Sistema", `Risultato ricerca: ${searchData.results.substring(0,100)}...`, `search-res-${functionCall.call_id}`);
+            sendClientEvent({ type: "conversation.item.create", item: { type: "function_call_output", call_id: functionCall.call_id, output: functionOutput } });
             sendClientEvent({ type: "response.create" });
-            statusDiv.textContent = "Ho cercato. Ora formulo una risposta...";
-
+            statusDiv.textContent = "Ho cercato. Formulo risposta...";
         } catch (e) {
-            console.error("DEBUG (handleFunctionCall): Errore durante la chiamata di funzione searchMemory (catch):", e);
-            addTranscript("Sistema", `Errore durante la ricerca (catch): ${e.message}`, `search-catch-${functionCall.call_id}`);
-            sendClientEvent({
-                type: "conversation.item.create",
-                item: {
-                    type: "function_call_output",
-                    call_id: functionCall.call_id,
-                    output: JSON.stringify({ error: "Non sono riuscito a cercare nella memoria in questo momento." })
-                }
-            });
+            console.error("DEBUG (handleFunctionCall): Errore:", e);
+            addTranscript("Sistema", `Errore ricerca (catch): ${e.message}`, `search-catch-${functionCall.call_id}`);
+            sendClientEvent({ type: "conversation.item.create", item: { type: "function_call_output", call_id: functionCall.call_id, output: JSON.stringify({ error: "Non sono riuscito a cercare." }) } });
             sendClientEvent({ type: "response.create" });
-            statusDiv.textContent = "Errore nella ricerca memoria. Provo a rispondere comunque.";
+            statusDiv.textContent = "Errore ricerca memoria.";
         }
     }
 }
 
 function handleServerEvent(event) {
-    console.log(`DEBUG (handleServerEvent): Ricevuto evento server: type='${event.type}', event object:`, JSON.parse(JSON.stringify(event)));
+    console.log(`DEBUG (handleServerEvent): Ricevuto evento: type='${event.type}', obj:`, JSON.parse(JSON.stringify(event)));
 
     switch (event.type) {
         case "session.created":
-            statusDiv.textContent = `Sessione ${event.session.id.slice(-4)} creata. Parla pure!`;
+            statusDiv.textContent = `Sessione ${event.session.id.slice(-4)} creata.`;
             break;
-        case "session.updated":
-            break;
-        case "input_audio_buffer.speech_started":
-            statusDiv.textContent = "Ti sto ascoltando...";
-            break;
-        case "input_audio_buffer.speech_stopped":
-            statusDiv.textContent = "Elaborazione audio... Attendo risposta AI...";
-            break;
+        case "session.updated": break;
+        case "input_audio_buffer.speech_started": statusDiv.textContent = "Ti ascolto..."; break;
+        case "input_audio_buffer.speech_stopped": statusDiv.textContent = "Elaboro audio..."; break;
 
-        // ----- MODIFICA PRINCIPALE PER TRASCRIZIONE UTENTE -----
         case "conversation.item.created":
-            // Verifichiamo se questo item è una trascrizione dell'utente
-            if (event.item && event.item.type === "input_audio_transcription" && event.item.payload &&
-                typeof event.item.payload.transcript === 'string' && event.item.payload.transcript.trim() !== '') {
-                console.log(`DEBUG (handleServerEvent - conversation.item.created): TROVATA TRASCRIZIONE UTENTE! Transcript='${event.item.payload.transcript}', item_id='${event.item.id}'`);
-                addTranscript("Tu", event.item.payload.transcript, event.item.id);
-            } else if (event.item && event.item.type === "input_audio_transcription") {
-                console.warn(`DEBUG (handleServerEvent - conversation.item.created): Ricevuto item input_audio_transcription MA transcript è assente, non stringa o vuoto. Payload:`, event.item.payload);
+            if (event.item && event.item.role === "user" && event.item.type === "message") {
+                const userTranscript = event.item.content;
+                if (userTranscript && typeof userTranscript === 'string' && userTranscript.trim() !== '') {
+                    console.log(`DEBUG (handleServerEvent - USER MESSAGE): TROVATA TRASCRIZIONE! Transcript='${userTranscript}'`);
+                    addTranscript("Tu", userTranscript, event.item.id);
+                } else {
+                    console.warn(`DEBUG (handleServerEvent - USER MESSAGE): Transcript vuoto o non stringa. Item:`, event.item);
+                }
             }
             break;
 
-        // Lasciamo questo case per sicurezza, ma non ci aspettiamo più che arrivi
-        // se la trascrizione è in "conversation.item.created"
-        case "conversation.item.input_audio_transcription.completed":
-            console.log(`DEBUG (handleServerEvent - transcription.completed - OBSOLETO?): event.transcript='${event.transcript}', item_id='${event.item_id}'`);
+        case "conversation.item.input_audio_transcription.completed": // Fallback, ma non dovrebbe servire
+            console.log(`DEBUG (handleServerEvent - transcription.completed - OBSOLETO?): transcript='${event.transcript}'`);
             if (event.transcript && typeof event.transcript === 'string' && event.transcript.trim() !== '') {
                 addTranscript("Tu", event.transcript, event.item_id);
-            } else {
-                console.warn("DEBUG (handleServerEvent - transcription.completed - OBSOLETO?): Transcript assente, non stringa, o vuoto.");
             }
             break;
-        // ----- FINE MODIFICA PRINCIPALE -----
 
         case "response.created":
             currentAIResponseId = event.response.id;
-            // console.log("DEBUG (handleServerEvent - response.created): currentAIResponseId impostato a", currentAIResponseId, "Output:", event.response.output); // Meno verboso
-            statusDiv.textContent = "AI sta elaborando...";
+            statusDiv.textContent = "AI elabora...";
             break;
         case "response.text.delta":
         case "response.audio_transcript.delta":
             if (typeof event.delta === 'string') {
                 appendToTranscript("AI", event.delta, event.response_id || currentAIResponseId);
-                statusDiv.textContent = "AI sta rispondendo...";
-            } else {
-                // console.warn(`DEBUG (handleServerEvent - ${event.type}): Delta non è una stringa:`, event.delta); // Meno verboso
+                statusDiv.textContent = "AI risponde...";
             }
             break;
         case "response.done":
-            // console.log("DEBUG (handleServerEvent - response.done): Risposta AI completata. Response ID:", event.response.id, "Output:", event.response.output); // Meno verboso
             if (event.response.output && event.response.output.length > 0 && event.response.output[0].type === "function_call") {
-                console.log("DEBUG (handleServerEvent - response.done): Rilevata function_call.");
-                const functionCall = event.response.output[0];
-                handleFunctionCall(functionCall);
+                handleFunctionCall(event.response.output[0]);
             } else {
-                const lastEntry = currentConversationHistory.length > 0 ? currentConversationHistory[currentConversationHistory.length - 1] : null;
-                if (lastEntry && lastEntry.speaker === "AI" && lastEntry.content && lastEntry.content.trim() !== '') {
-                    statusDiv.textContent = "Risposta AI completata. Parla pure!";
-                } else if (!lastEntry || lastEntry.speaker !== "AI" || !lastEntry.content || !lastEntry.content.trim() === '') {
-                     statusDiv.textContent = "Pronto per input o funzione AI eseguita. Parla pure!";
-                }
+                statusDiv.textContent = "Risposta AI completata.";
             }
             currentAIResponseId = null;
             break;
         case "error":
-            console.error("Errore dal server OpenAI:", event);
-            statusDiv.textContent = `Errore OpenAI: ${event.message || event.code || 'Errore sconosciuto'}`;
-            if (event.code === "session_expired" || event.code === "token_expired" || event.code === "session_not_found" || event.code === "connection_closed") {
-                console.log("DEBUG (handleServerEvent - error): Errore di sessione/token, tento salvataggio e stop.");
+            console.error("Errore OpenAI:", event);
+            statusDiv.textContent = `Errore OpenAI: ${event.message || event.code}`;
+            if (["session_expired", "token_expired", "session_not_found", "connection_closed"].includes(event.code)) {
                 saveCurrentSessionHistoryAndStop();
             }
             break;
         default:
-             console.log(`DEBUG (handleServerEvent - TIPO EVENTO NON GESTITO ESPLICITAMENTE): type='${event.type}'. Evento completo:`, JSON.parse(JSON.stringify(event)));
+             console.log(`DEBUG (handleServerEvent - EVENTO NON GESTITO): type='${event.type}'. Evento:`, JSON.parse(JSON.stringify(event)));
             break;
     }
 }
 
-stopButton.addEventListener('click', () => {
-    console.log("DEBUG: Pulsante STOP premuto.");
-    saveCurrentSessionHistoryAndStop();
-});
+stopButton.addEventListener('click', () => saveCurrentSessionHistoryAndStop());
 startButton.addEventListener('click', startConversation);
-
 window.addEventListener('beforeunload', () => {
-    console.log("DEBUG: Evento 'beforeunload' rilevato.");
-    if (pc && pc.connectionState !== "closed") {
-        console.log("DEBUG (beforeunload): Connessione WebRTC attiva, chiamo stopConversation per pulizia.");
-        stopConversation();
-    }
+    if (pc && pc.connectionState !== "closed") stopConversation();
 });
