@@ -17,29 +17,32 @@ export default async function handler(req, res) {
     const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-        return res.status(500).json({ error: 'Supabase URL o Key non configurate.' });
+        // Log specifico per il server
+        console.error('ERRORE FATALE in api/searchMemory: SUPABASE_URL o SUPABASE_SERVICE_KEY non sono definite nelle variabili d\'ambiente di Vercel.');
+        return res.status(500).json({ error: 'Configurazione del server incompleta: Supabase URL o Key non configurate.' });
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     try {
-        const { query } = req.query; // Riceve i termini di ricerca come query parameter
+        const { query } = req.query;
 
-        if (!query) {
-            return res.status(400).json({ error: 'Query di ricerca richiesta.' });
+        if (!query || typeof query !== 'string' || query.trim() === '') {
+            console.warn('api/searchMemory: Richiesta con parametro query mancante, non stringa, o vuoto. Query ricevuta:', query);
+            return res.status(400).json({ error: 'Il parametro query di ricerca è richiesto, deve essere una stringa e non può essere vuoto.' });
         }
 
-        // Ricerca testuale semplice (PostgreSQL LIKE). 
-        // Per ricerche più avanzate, potresti usare la ricerca full-text di PostgreSQL (tsvector).
+        const searchTerm = String(query).trim();
+
         const { data, error } = await supabase
             .from('memoria_chat')
             .select('speaker, content, created_at')
-            .ilike('content', `%${query}%`) // Case-insensitive LIKE
-            .order('created_at', { ascending: false }) // Più recenti prima
-            .limit(5); // Restituisce al massimo 5 risultati rilevanti
+            .ilike('content', `%${searchTerm}%`)
+            .order('created_at', { ascending: false })
+            .limit(5);
 
         if (error) {
-            console.error('Errore Supabase (select):', error);
+            console.error('Errore Supabase (select) in api/searchMemory:', error);
             return res.status(500).json({ error: 'Errore durante la ricerca nella memoria.', details: error.message });
         }
         
@@ -49,7 +52,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ results: formattedResults || "Nessun ricordo trovato per quei termini." });
 
     } catch (e) {
-        console.error('Errore generico in searchMemory:', e);
+        console.error('Errore generico in api/searchMemory:', e);
         return res.status(500).json({ error: 'Errore interno del server.', details: e.message });
     }
 }
