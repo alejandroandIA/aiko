@@ -1,6 +1,6 @@
 // api/searchMemory.js
 import { createClient } from '@supabase/supabase-js';
-import { USER_NAME, AI_NAME } from '../../src/config/aiConfig.js'; // Assicurati che il percorso sia corretto!
+import { USER_NAME, AI_NAME } from '../src/config/aiConfig.js'; // <<<< PERCORSO CORRETTO
 
 
 export default async function handler(req, res) {
@@ -45,8 +45,8 @@ export default async function handler(req, res) {
             return res.status(500).json({ error: 'Errore ricerca memoria.', details: error.message });
         }
         const formattedResults = data.map(item => {
-            const speakerLabel = item.speaker === 'Tu' ? USER_NAME : AI_NAME; // Usa nomi da config
-            return `${speakerLabel} (il ${new Date(item.created_at).toLocaleDateString('it-IT')} ${new Date(item.created_at).toLocaleTimeString('it-IT','{hour:2-digit,minute:2-digit}')}): ${item.content}`;
+            const speakerLabel = item.speaker === 'Tu' ? USER_NAME : AI_NAME;
+            return `${speakerLabel} (il ${new Date(item.created_at).toLocaleDateString('it-IT')} ${new Date(item.created_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}): ${item.content}`;
         }).join('\n---\n');
         res.setHeader('Access-Control-Allow-Origin', '*');
         return res.status(200).json({ results: formattedResults || "Nessun ricordo trovato per quei termini." });
