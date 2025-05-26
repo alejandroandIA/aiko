@@ -1,5 +1,5 @@
 // api/session.js
-import { getBaseInstructions, AI_NAME, USER_NAME } from '../src/config/aiConfig.js'; // <<<< PERCORSO CORRETTO
+import { getBaseInstructions, AI_NAME, USER_NAME } from '../src/config/aiConfig.js';
 
 export default async function handler(req, res) {
     if (req.method === 'OPTIONS') {
@@ -27,7 +27,7 @@ export default async function handler(req, res) {
     }
 
     const system_instructions = getBaseInstructions(contextSummary, AI_NAME, USER_NAME);
-    console.log("DEBUG api/session.js: Istruzioni inviate a OpenAI (prime 300char):", system_instructions.substring(0, 300) + "...");
+    // console.log("DEBUG api/session.js: Istruzioni inviate (prime 300char):", system_instructions.substring(0, 300) + "...");
 
     try {
         const openAIResponse = await fetch("https://api.openai.com/v1/realtime/sessions", {
