@@ -1,7 +1,7 @@
-// script.js
+// script.js (COMPLETO E AGGIORNATO CON L'ULTIMA LOGICA PER HANDLESERVEREVENT)
 const startButton = document.getElementById('startButton');
 const stopButton = document.getElementById('stopButton');
-const statusDiv = document.getElementById('status'); // Lo manteniamo per ora, puoi decidere di nasconderlo con CSS
+const statusDiv = document.getElementById('status');
 const transcriptsDiv = document.getElementById('transcripts');
 const aiAudioPlayer = document.getElementById('aiAudioPlayer');
 
@@ -152,7 +152,7 @@ async function saveCurrentSessionHistoryAndStop() {
         console.log(`DEBUG (save): ${savedCount} entries inviate.`);
         currentConversationHistory = [];
     }
-    if (statusDiv) statusDiv.textContent = "Salvataggio completato.";
+    if (statusDiv) statusDiv.textContent = "Salvataggio completato."; // Aggiornato per riflettere che è finito
     stopConversation();
 }
 
@@ -175,7 +175,7 @@ function sendClientEvent(event) { if (dc && dc.readyState === "open") dc.send(JS
 
 function addTranscript(speaker, textContent, itemId) {
     console.log(`DEBUG (addTranscript): Speaker='${speaker}', Content='${textContent.substring(0,50)}...'`);
-    const id = `${speaker}-${itemId || Date.now()}`; // Date.now per fallback ID univoco
+    const id = `${speaker}-${itemId || Date.now()}`;
     let div = document.getElementById(id);
     if (!div) {
         div = document.createElement('div');
@@ -183,7 +183,7 @@ function addTranscript(speaker, textContent, itemId) {
         div.className = speaker.toLowerCase();
         transcriptsDiv.appendChild(div);
     }
-    div.innerHTML = `<strong>${speaker === 'Tu' ? 'Alejandro' : speaker}:</strong> ${textContent}`; // Usa innerHTML per bold
+    div.innerHTML = `<strong>${speaker === 'Tu' ? 'Alejandro' : speaker}:</strong> ${textContent}`;
     transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight;
 
     if ((speaker === "Tu" || speaker === "AI") && typeof textContent === 'string' && textContent.trim() !== '') {
@@ -202,11 +202,11 @@ function appendToTranscript(speaker, textDelta, itemId) {
         div = document.createElement('div');
         div.id = id;
         div.className = speaker.toLowerCase();
-        div.innerHTML = `<strong>${speaker === 'Tu' ? 'Alejandro' : speaker}:</strong> `; // Inizia con il nome speaker
+        div.innerHTML = `<strong>${speaker === 'Tu' ? 'Alejandro' : speaker}:</strong> `;
         transcriptsDiv.appendChild(div);
         isNew = true;
     }
-    div.innerHTML += textDelta; // Appendi solo il delta
+    div.innerHTML += textDelta;
     transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight;
 
     if (speaker === "AI") {
@@ -247,21 +247,42 @@ async function handleFunctionCall(functionCall) {
 
 function handleServerEvent(event) {
     console.log(`DEBUG (handleServerEvent): type='${event.type}', obj:`, JSON.parse(JSON.stringify(event)));
+
     switch (event.type) {
-        case "session.created": if (statusDiv) statusDiv.textContent = `Sessione con Aiko creata.`; break;
-        case "session.updated": break;
-        case "input_audio_buffer.speech_started": if (statusDiv) statusDiv.textContent = "Ti ascolto..."; break;
-        case "input_audio_buffer.speech_stopped": if (statusDiv) statusDiv.textContent = "Elaboro il tuo audio..."; break;
+        case "session.created":
+            if (statusDiv) statusDiv.textContent = `Sessione con Aiko creata.`;
+            break;
+        case "session.updated":
+            break;
+        case "input_audio_buffer.speech_started":
+            if (statusDiv) statusDiv.textContent = "Ti ascolto...";
+            break;
+        case "input_audio_buffer.speech_stopped":
+            if (statusDiv) statusDiv.textContent = "Elaboro il tuo audio...";
+            break;
+
         case "conversation.item.created":
-            if (event.item && event.item.role === "user" && event.item.type === "message" && event.item.content && typeof event.item.content === 'string' && event.item.content.trim() !== '') {
-                // NUOVA IPOTESI: la trascrizione è in event.item.content direttamente per messaggi utente
-                console.log(`DEBUG (handleServerEvent - USER MESSAGE in item.created): TROVATA TRASCRIZIONE! Transcript='${event.item.content}'`);
-                addTranscript("Tu", event.item.content, event.item.id);
-            } else if (event.item && event.item.role === "user" && event.item.type === "message") {
-                 console.warn(`DEBUG (handleServerEvent - USER MESSAGE in item.created): item.content non è una stringa valida. Item:`, event.item);
+            if (event.item && event.item.role === "user" && event.item.type === "message") {
+                console.log(`DEBUG (handleServerEvent - USER MESSAGE CREATED): item_id='${event.item.id}'. Attendo trascrizione... Contenuto attuale:`, event.item.content);
             }
             break;
-        case "conversation.item.input_audio_transcription.completed": // Evento finale con trascrizione utente
+
+        case "conversation.item.updated":
+            if (event.item && event.item.role === "user" && event.item.type === "message" &&
+                event.item.status === "completed" &&
+                event.item.content && Array.isArray(event.item.content) && event.item.content.length > 0 &&
+                event.item.content[0].type === "input_audio" && // Verifica il tipo dentro l'array content
+                typeof event.item.content[0].transcript === 'string' && event.item.content[0].transcript.trim() !== '') {
+
+                const userTranscript = event.item.content[0].transcript;
+                console.log(`DEBUG (handleServerEvent - USER MESSAGE UPDATED): TROVATA TRASCRIZIONE! Transcript='${userTranscript}', item_id='${event.item.id}'`);
+                addTranscript("Tu", userTranscript, event.item.id);
+            } else if (event.item && event.item.role === "user" && event.item.type === "message") {
+                console.warn(`DEBUG (handleServerEvent - USER MESSAGE UPDATED): Item utente aggiornato, ma formato trascrizione non trovato o trascrizione vuota. Item:`, JSON.parse(JSON.stringify(event.item)));
+            }
+            break;
+
+        case "conversation.item.input_audio_transcription.completed": // Fallback
             console.log(`DEBUG (handleServerEvent - INPUT_AUDIO_TRANSCRIPTION.COMPLETED): Transcript='${event.transcript}'`);
             if (event.transcript && typeof event.transcript === 'string' && event.transcript.trim() !== '') {
                 addTranscript("Tu", event.transcript, event.item_id);
@@ -269,10 +290,16 @@ function handleServerEvent(event) {
                 console.warn(`DEBUG (handleServerEvent - INPUT_AUDIO_TRANSCRIPTION.COMPLETED): Transcript non valido.`);
             }
             break;
-        case "response.created": currentAIResponseId = event.response.id; if (statusDiv) statusDiv.textContent = "Aiko sta pensando..."; break;
+
+        case "response.created":
+            currentAIResponseId = event.response.id;
+            if (statusDiv) statusDiv.textContent = "Aiko sta pensando...";
+            break;
         case "response.text.delta":
         case "response.audio_transcript.delta":
-            if (typeof event.delta === 'string') appendToTranscript("AI", event.delta, event.response_id || currentAIResponseId);
+            if (typeof event.delta === 'string') {
+                appendToTranscript("AI", event.delta, event.response_id || currentAIResponseId);
+            }
             if (statusDiv) statusDiv.textContent = "Aiko risponde...";
             break;
         case "response.done":
@@ -286,10 +313,12 @@ function handleServerEvent(event) {
         case "error":
             console.error("Errore OpenAI:", event);
             if (statusDiv) statusDiv.textContent = `Errore OpenAI: ${event.message || event.code}`;
-            if (["session_expired", "token_expired", "session_not_found", "connection_closed"].includes(event.code)) saveCurrentSessionHistoryAndStop();
+            if (["session_expired", "token_expired", "session_not_found", "connection_closed"].includes(event.code)) {
+                saveCurrentSessionHistoryAndStop();
+            }
             break;
         default:
-             console.log(`DEBUG (handleServerEvent - EVENTO NON GESTITO): type='${event.type}'.`);
+             console.log(`DEBUG (handleServerEvent - EVENTO NON GESTITO ESPLICITAMENTE): type='${event.type}'.`);
             break;
     }
 }
