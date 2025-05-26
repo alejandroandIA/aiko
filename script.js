@@ -1,4 +1,4 @@
-// script.js (COMPLETO E AGGIORNATO CON L'ULTIMA LOGICA PER HANDLESERVEREVENT)
+// script.js
 const startButton = document.getElementById('startButton');
 const stopButton = document.getElementById('stopButton');
 const statusDiv = document.getElementById('status');
@@ -152,7 +152,7 @@ async function saveCurrentSessionHistoryAndStop() {
         console.log(`DEBUG (save): ${savedCount} entries inviate.`);
         currentConversationHistory = [];
     }
-    if (statusDiv) statusDiv.textContent = "Salvataggio completato."; // Aggiornato per riflettere che è finito
+    if (statusDiv) statusDiv.textContent = "Salvataggio completato.";
     stopConversation();
 }
 
@@ -263,7 +263,25 @@ function handleServerEvent(event) {
 
         case "conversation.item.created":
             if (event.item && event.item.role === "user" && event.item.type === "message") {
-                console.log(`DEBUG (handleServerEvent - USER MESSAGE CREATED): item_id='${event.item.id}'. Attendo trascrizione... Contenuto attuale:`, event.item.content);
+                console.log(`DEBUG (handleServerEvent - USER MESSAGE CREATED): item_id='${event.item.id}'. Verifico contenuto... Item:`, JSON.parse(JSON.stringify(event.item)));
+                let userTranscript = null;
+                // Tentativo 1: Direttamente in item.content (se è una stringa)
+                if (typeof event.item.content === 'string') {
+                    userTranscript = event.item.content;
+                }
+                // Tentativo 2: Dentro item.content[0].transcript (se è un array)
+                else if (event.item.content && Array.isArray(event.item.content) && event.item.content.length > 0 &&
+                    event.item.content[0].type === "input_audio" &&
+                    typeof event.item.content[0].transcript === 'string') {
+                    userTranscript = event.item.content[0].transcript;
+                }
+
+                if (userTranscript && userTranscript.trim() !== '') {
+                    console.log(`DEBUG (handleServerEvent - USER MESSAGE CREATED): TROVATA TRASCRIZIONE! Transcript='${userTranscript}'`);
+                    addTranscript("Tu", userTranscript, event.item.id);
+                } else {
+                    console.warn(`DEBUG (handleServerEvent - USER MESSAGE CREATED): Trascrizione non trovata o vuota nel formato atteso. Item content:`, event.item.content);
+                }
             }
             break;
 
@@ -271,23 +289,23 @@ function handleServerEvent(event) {
             if (event.item && event.item.role === "user" && event.item.type === "message" &&
                 event.item.status === "completed" &&
                 event.item.content && Array.isArray(event.item.content) && event.item.content.length > 0 &&
-                event.item.content[0].type === "input_audio" && // Verifica il tipo dentro l'array content
+                event.item.content[0].type === "input_audio" &&
                 typeof event.item.content[0].transcript === 'string' && event.item.content[0].transcript.trim() !== '') {
 
-                const userTranscript = event.item.content[0].transcript;
-                console.log(`DEBUG (handleServerEvent - USER MESSAGE UPDATED): TROVATA TRASCRIZIONE! Transcript='${userTranscript}', item_id='${event.item.id}'`);
-                addTranscript("Tu", userTranscript, event.item.id);
+                const userTranscriptUpdated = event.item.content[0].transcript;
+                console.log(`DEBUG (handleServerEvent - USER MESSAGE UPDATED): TROVATA TRASCRIZIONE! Transcript='${userTranscriptUpdated}', item_id='${event.item.id}'`);
+                addTranscript("Tu", userTranscriptUpdated, event.item.id);
             } else if (event.item && event.item.role === "user" && event.item.type === "message") {
-                console.warn(`DEBUG (handleServerEvent - USER MESSAGE UPDATED): Item utente aggiornato, ma formato trascrizione non trovato o trascrizione vuota. Item:`, JSON.parse(JSON.stringify(event.item)));
+                 console.warn(`DEBUG (handleServerEvent - USER MESSAGE UPDATED): Item utente aggiornato, ma formato trascrizione non trovato o trascrizione vuota. Item:`, JSON.parse(JSON.stringify(event.item)));
             }
             break;
 
-        case "conversation.item.input_audio_transcription.completed": // Fallback
-            console.log(`DEBUG (handleServerEvent - INPUT_AUDIO_TRANSCRIPTION.COMPLETED): Transcript='${event.transcript}'`);
+        case "conversation.item.input_audio_transcription.completed": // Fallback, meno probabile per trascrizione finale utente
+            console.log(`DEBUG (handleServerEvent - INPUT_AUDIO_TRANSCRIPTION.COMPLETED - Fallback): Transcript='${event.transcript}'`);
             if (event.transcript && typeof event.transcript === 'string' && event.transcript.trim() !== '') {
                 addTranscript("Tu", event.transcript, event.item_id);
             } else {
-                console.warn(`DEBUG (handleServerEvent - INPUT_AUDIO_TRANSCRIPTION.COMPLETED): Transcript non valido.`);
+                console.warn(`DEBUG (handleServerEvent - INPUT_AUDIO_TRANSCRIPTION.COMPLETED - Fallback): Transcript non valido.`);
             }
             break;
 
