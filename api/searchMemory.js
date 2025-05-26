@@ -1,7 +1,6 @@
 // api/searchMemory.js
 import { createClient } from '@supabase/supabase-js';
-import { USER_NAME, AI_NAME } from '../src/config/aiConfig.js'; // <<<< PERCORSO CORRETTO
-
+import { USER_NAME, AI_NAME } from '../src/config/aiConfig.js';
 
 export default async function handler(req, res) {
     if (req.method === 'OPTIONS') {
@@ -29,7 +28,7 @@ export default async function handler(req, res) {
     try {
         const { query } = req.query;
         if (!query || typeof query !== 'string' || query.trim() === '') {
-            console.warn('api/searchMemory: Query mancante/vuota. Query:', query);
+            // console.warn('api/searchMemory: Query mancante/vuota. Query:', query); // Meno verboso
             return res.status(400).json({ error: 'Parametro query richiesto e non vuoto.' });
         }
         const searchTerm = String(query).trim();
@@ -38,7 +37,7 @@ export default async function handler(req, res) {
             .select('speaker, content, created_at')
             .ilike('content', `%${searchTerm}%`)
             .order('created_at', { ascending: false })
-            .limit(10);
+            .limit(10); // Aumentato limite per contesto più ricco
 
         if (error) {
             console.error('Errore Supabase (select) api/searchMemory:', error);
