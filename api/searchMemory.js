@@ -1,5 +1,7 @@
 // api/searchMemory.js
 import { createClient } from '@supabase/supabase-js';
+import { USER_NAME, AI_NAME } from '../../src/config/aiConfig.js'; // Assicurati che il percorso sia corretto!
+
 
 export default async function handler(req, res) {
     if (req.method === 'OPTIONS') {
@@ -18,44 +20,38 @@ export default async function handler(req, res) {
     const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-        console.error('ERRORE FATALE in api/searchMemory: SUPABASE_URL o SUPABASE_SERVICE_KEY non sono definite.');
-        return res.status(500).json({ error: 'Configurazione del server incompleta: Supabase URL o Key non configurate.' });
+        console.error('ERRORE FATALE api/searchMemory: SUPABASE_URL o SUPABASE_SERVICE_KEY non definite.');
+        return res.status(500).json({ error: 'Configurazione server incompleta.' });
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     try {
         const { query } = req.query;
-
         if (!query || typeof query !== 'string' || query.trim() === '') {
-            console.warn('api/searchMemory: Richiesta con parametro query mancante, non stringa, o vuoto. Query:', query);
-            return res.status(400).json({ error: 'Il parametro query di ricerca è richiesto, deve essere una stringa e non può essere vuoto.' });
+            console.warn('api/searchMemory: Query mancante/vuota. Query:', query);
+            return res.status(400).json({ error: 'Parametro query richiesto e non vuoto.' });
         }
-
         const searchTerm = String(query).trim();
-
         const { data, error } = await supabase
             .from('memoria_chat')
             .select('speaker, content, created_at')
             .ilike('content', `%${searchTerm}%`)
             .order('created_at', { ascending: false })
-            .limit(10); // Aumentato un po' il limite per dare più contesto
+            .limit(10);
 
         if (error) {
-            console.error('Errore Supabase (select) in api/searchMemory:', error);
-            return res.status(500).json({ error: 'Errore durante la ricerca nella memoria.', details: error.message });
+            console.error('Errore Supabase (select) api/searchMemory:', error);
+            return res.status(500).json({ error: 'Errore ricerca memoria.', details: error.message });
         }
-
         const formattedResults = data.map(item => {
-            const speakerLabel = item.speaker === 'Tu' ? 'Alejandro' : 'Aiko';
-            return `${speakerLabel} (il ${new Date(item.created_at).toLocaleDateString('it-IT')} alle ${new Date(item.created_at).toLocaleTimeString('it-IT')}): ${item.content}`;
+            const speakerLabel = item.speaker === 'Tu' ? USER_NAME : AI_NAME; // Usa nomi da config
+            return `${speakerLabel} (il ${new Date(item.created_at).toLocaleDateString('it-IT')} ${new Date(item.created_at).toLocaleTimeString('it-IT','{hour:2-digit,minute:2-digit}')}): ${item.content}`;
         }).join('\n---\n');
-
         res.setHeader('Access-Control-Allow-Origin', '*');
         return res.status(200).json({ results: formattedResults || "Nessun ricordo trovato per quei termini." });
-
     } catch (e) {
-        console.error('Errore generico in api/searchMemory:', e);
-        return res.status(500).json({ error: 'Errore interno del server.', details: e.message });
+        console.error('Errore generico api/searchMemory:', e);
+        return res.status(500).json({ error: 'Errore interno server.', details: e.message });
     }
 }
