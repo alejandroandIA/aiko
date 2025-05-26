@@ -1,8 +1,9 @@
 // api/generateContextSummary.js
 import { createClient } from '@supabase/supabase-js';
+import { USER_NAME, AI_NAME } from '../../src/config/aiConfig.js'; // Assicurati che il percorso sia corretto!
 
 export default async function handler(req, res) {
-    if (req.method !== 'GET') { // Questo endpoint sarà chiamato con GET dal client
+    if (req.method !== 'GET') {
         res.setHeader('Allow', ['GET']);
         return res.status(405).end('Method Not Allowed');
     }
@@ -12,8 +13,8 @@ export default async function handler(req, res) {
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
     if (!supabaseUrl || !supabaseServiceKey || !OPENAI_API_KEY) {
-        console.error('generateContextSummary: Variabili d\'ambiente mancanti.');
-        return res.status(500).json({ error: 'Configurazione del server incompleta.' });
+        console.error('generateContextSummary: Variabili ambiente mancanti.');
+        return res.status(500).json({ error: 'Configurazione server incompleta.' });
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -23,63 +24,52 @@ export default async function handler(req, res) {
             .from('memoria_chat')
             .select('speaker, content, created_at')
             .order('created_at', { ascending: false })
-            .limit(20); // Recupera le ultime 20 interazioni
+            .limit(20);
 
         if (historyError) {
-            console.error('Errore recupero cronologia per riassunto in generateContextSummary:', historyError);
-            // Restituisce un oggetto con summary vuoto così il client può gestire
-            return res.status(200).json({ summary: "Errore recupero cronologia per riassunto." });
+            console.error('Errore recupero cronologia per riassunto:', historyError);
+            return res.status(200).json({ summary: "Errore recupero cronologia." });
         }
-
         if (!chatHistory || chatHistory.length === 0) {
-            return res.status(200).json({ summary: "" }); // Nessuna storia, nessun riassunto
+            return res.status(200).json({ summary: "" });
         }
 
         const formattedHistory = chatHistory
             .reverse()
-            .map(entry => `${entry.speaker === 'Tu' ? 'Alejandro' : 'Aiko'}: ${entry.content}`)
+            .map(entry => `${entry.speaker === 'Tu' ? USER_NAME : AI_NAME}: ${entry.content}`)
             .join('\n');
 
-        const summaryPrompt = `Data la seguente cronologia di chat tra Alejandro e Aiko, estrai i punti chiave, le preferenze menzionate da Alejandro, i dati personali rivelati da Alejandro (nomi, luoghi, date importanti, dettagli familiari, ecc.) e i temi principali discussi. Fornisci un riassunto molto conciso (massimo 150-200 parole) focalizzato sulle informazioni riguardanti Alejandro. Questo riassunto verrà usato per dare contesto ad Aiko all'inizio di una nuova conversazione con Alejandro.
+        const summaryPrompt = `Data la seguente cronologia di chat tra ${USER_NAME} e ${AI_NAME}, estrai i punti chiave, le preferenze menzionate da ${USER_NAME}, i dati personali rivelati da ${USER_NAME} e i temi principali discussi. Fornisci un riassunto conciso (max 150-200 parole) focalizzato sulle informazioni riguardanti ${USER_NAME}. Questo riassunto darà contesto ad ${AI_NAME} all'inizio di una nuova conversazione.
 
 Cronologia chat recente:
 ${formattedHistory}
 
-Riassunto conciso dei fatti e dettagli chiave APPRESI SU ALEJANDRO e sulle vostre interazioni passate:`;
+Riassunto conciso dei fatti e dettagli chiave APPRESI SU ${USER_NAME} e sulle vostre interazioni passate:`;
 
         const openaiSummaryResponse = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${OPENAI_API_KEY}`,
-                "Content-Type": "application/json",
-            },
+            headers: { "Authorization": `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
             body: JSON.stringify({
-                model: "gpt-4o", // O un altro modello potente per riassunti
+                model: "gpt-4o",
                 messages: [
-                    { role: "system", content: "Sei un eccellente assistente nel riassumere testi di conversazioni, focalizzandoti sui dettagli dell'utente." },
+                    { role: "system", content: `Sei un assistente che riassume conversazioni tra ${USER_NAME} e ${AI_NAME}, focalizzandoti sui dettagli appresi su ${USER_NAME}.` },
                     { role: "user", content: summaryPrompt }
                 ],
-                temperature: 0.2,
-                max_tokens: 250,
+                temperature: 0.2, max_tokens: 250,
             }),
         });
 
         if (!openaiSummaryResponse.ok) {
             const errorData = await openaiSummaryResponse.json().catch(() => null);
-            console.error('Errore API OpenAI per riassunto in generateContextSummary:', openaiSummaryResponse.status, errorData || await openaiSummaryResponse.text());
-            return res.status(200).json({ summary: "Errore durante la generazione del riassunto." });
+            console.error('Errore API OpenAI riassunto:', openaiSummaryResponse.status, errorData);
+            return res.status(200).json({ summary: "Errore generazione riassunto." });
         }
-
         const summaryData = await openaiSummaryResponse.json();
-        const summaryText = summaryData.choices && summaryData.choices[0] && summaryData.choices[0].message && summaryData.choices[0].message.content
-            ? summaryData.choices[0].message.content.trim()
-            : "";
-
+        const summaryText = summaryData.choices?.[0]?.message?.content?.trim() || "";
         res.setHeader('Access-Control-Allow-Origin', '*');
         return res.status(200).json({ summary: summaryText });
-
     } catch (e) {
-        console.error('Errore generico in generateContextSummary:', e);
-        return res.status(500).json({ error: 'Errore interno del server durante la generazione del riassunto.' });
+        console.error('Errore generico generateContextSummary:', e);
+        return res.status(500).json({ error: 'Errore interno server riassunto.' });
     }
 }
