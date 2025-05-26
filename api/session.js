@@ -1,5 +1,5 @@
 // api/session.js
-import { AI_NAME, USER_NAME, getBaseInstructions } from '../../src/config/aiConfig.js'; // Assicurati che il percorso sia corretto!
+import { getBaseInstructions, AI_NAME, USER_NAME } from '../src/config/aiConfig.js'; // <<<< PERCORSO CORRETTO
 
 export default async function handler(req, res) {
     if (req.method === 'OPTIONS') {
@@ -18,7 +18,7 @@ export default async function handler(req, res) {
 
     if (!OPENAI_API_KEY) {
         console.error('ERRORE FATALE in api/session: OPENAI_API_KEY non configurata.');
-        return res.status(500).json({ error: "Configurazione del server incompleta." });
+        return res.status(500).json({ error: "Configurazione del server incompleta: OPENAI_API_KEY non configurata." });
     }
 
     let contextSummary = "";
@@ -26,7 +26,6 @@ export default async function handler(req, res) {
         contextSummary = req.body.contextSummary.trim();
     }
 
-    // Usa la funzione da aiConfig.js per ottenere le istruzioni
     const system_instructions = getBaseInstructions(contextSummary, AI_NAME, USER_NAME);
     console.log("DEBUG api/session.js: Istruzioni inviate a OpenAI (prime 300char):", system_instructions.substring(0, 300) + "...");
 
@@ -39,7 +38,7 @@ export default async function handler(req, res) {
             },
             body: JSON.stringify({
                 model: "gpt-4o-realtime-preview-2024-12-17",
-                voice: "shimmer", // Scegli la voce che preferisci
+                voice: "shimmer",
                 instructions: system_instructions,
             }),
         });
