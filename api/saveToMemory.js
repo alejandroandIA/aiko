@@ -18,19 +18,18 @@ export default async function handler(req, res) {
     const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-        console.error('ERRORE FATALE in api/saveToMemory: SUPABASE_URL o SUPABASE_SERVICE_KEY non sono definite.');
-        return res.status(500).json({ error: 'Configurazione del server incompleta: Supabase URL o Key non configurate.' });
+        console.error('ERRORE FATALE in api/saveToMemory: SUPABASE_URL o SUPABASE_SERVICE_KEY non definite.');
+        return res.status(500).json({ error: 'Configurazione server incompleta.' });
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     try {
         const { speaker, content } = req.body;
-
         if (!speaker || typeof speaker !== 'string' || speaker.trim() === '' ||
             !content || typeof content !== 'string' || content.trim() === '') {
-            console.warn('api/saveToMemory: Richiesta con speaker o content mancanti, non stringa, o vuoti. Body:', req.body);
-            return res.status(400).json({ error: 'I campi speaker e content sono richiesti, devono essere stringhe e non possono essere vuoti.' });
+            console.warn('api/saveToMemory: Dati mancanti/vuoti. Body:', req.body);
+            return res.status(400).json({ error: 'Speaker e content richiesti e non vuoti.' });
         }
 
         const { data, error } = await supabase
@@ -38,16 +37,14 @@ export default async function handler(req, res) {
             .insert([{ speaker: String(speaker).trim(), content: String(content).trim() }]);
 
         if (error) {
-            console.error('Errore Supabase (insert) in api/saveToMemory:', error);
-            return res.status(500).json({ error: 'Errore durante il salvataggio della memoria.', details: error.message });
+            console.error('Errore Supabase (insert) api/saveToMemory:', error);
+            return res.status(500).json({ error: 'Errore salvataggio memoria.', details: error.message });
         }
-
         const entrySaved = data && data.length > 0 ? data[0] : null;
         res.setHeader('Access-Control-Allow-Origin', '*');
-        return res.status(201).json({ message: 'Memoria salvata con successo.', entry: entrySaved });
-
+        return res.status(201).json({ message: 'Memoria salvata.', entry: entrySaved });
     } catch (e) {
-        console.error('Errore generico in api/saveToMemory:', e);
-        return res.status(500).json({ error: 'Errore interno del server.', details: e.message });
+        console.error('Errore generico api/saveToMemory:', e);
+        return res.status(500).json({ error: 'Errore interno server.', details: e.message });
     }
 }
