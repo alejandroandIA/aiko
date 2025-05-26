@@ -1,6 +1,6 @@
 // api/generateContextSummary.js
 import { createClient } from '@supabase/supabase-js';
-import { USER_NAME, AI_NAME } from '../../src/config/aiConfig.js'; // Assicurati che il percorso sia corretto!
+import { USER_NAME, AI_NAME } from '../src/config/aiConfig.js'; // <<<< PERCORSO CORRETTO
 
 export default async function handler(req, res) {
     if (req.method !== 'GET') {
@@ -39,7 +39,7 @@ export default async function handler(req, res) {
             .map(entry => `${entry.speaker === 'Tu' ? USER_NAME : AI_NAME}: ${entry.content}`)
             .join('\n');
 
-        const summaryPrompt = `Data la seguente cronologia di chat tra ${USER_NAME} e ${AI_NAME}, estrai i punti chiave, le preferenze menzionate da ${USER_NAME}, i dati personali rivelati da ${USER_NAME} e i temi principali discussi. Fornisci un riassunto conciso (max 150-200 parole) focalizzato sulle informazioni riguardanti ${USER_NAME}. Questo riassunto darà contesto ad ${AI_NAME} all'inizio di una nuova conversazione.
+        const summaryPrompt = `Data la seguente cronologia di chat tra ${USER_NAME} e ${AI_NAME}, estrai i punti chiave, le preferenze menzionate da ${USER_NAME}, i dati personali rivelati da ${USER_NAME} e i temi principali discussi. Fornisci un riassunto molto conciso (max 150-200 parole) focalizzato sulle informazioni riguardanti ${USER_NAME}. Questo riassunto darà contesto ad ${AI_NAME} all'inizio di una nuova conversazione.
 
 Cronologia chat recente:
 ${formattedHistory}
