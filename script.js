@@ -181,7 +181,6 @@ async function saveCurrentSessionHistoryAndStop() {
             console.log("DEBUG (saveCurrentSessionHistoryAndStop): Tento di salvare entry VALIDA:", JSON.stringify(entry));
             try {
                 const requestBody = { speaker: entry.speaker, content: entry.content };
-                // console.log("DEBUG (saveCurrentSessionHistoryAndStop): Corpo della richiesta a saveToMemory:", JSON.stringify(requestBody)); // Meno verboso ora
 
                 const saveResponse = await fetch(SAVE_MEMORY_API_ENDPOINT, {
                     method: 'POST',
@@ -194,7 +193,7 @@ async function saveCurrentSessionHistoryAndStop() {
                     console.error(`DEBUG (saveCurrentSessionHistoryAndStop): Errore dal server saveToMemory (${saveResponse.status}):`, errorData, "Per entry:", entry);
                 } else {
                     entriesSavedCount++;
-                    const responseData = await saveResponse.json(); // Leggiamo la risposta per completezza
+                    const responseData = await saveResponse.json();
                     console.log(`DEBUG (saveCurrentSessionHistoryAndStop): Messaggio "${entry.content.substring(0,20)}..." salvato. Risposta server:`, responseData.message);
                 }
             } catch (saveError) {
@@ -202,7 +201,7 @@ async function saveCurrentSessionHistoryAndStop() {
             }
         }
         console.log(`DEBUG (saveCurrentSessionHistoryAndStop): Fine ciclo di salvataggio. ${entriesSavedCount} entries inviate per il salvataggio.`);
-        currentConversationHistory = []; // Resetta solo dopo il ciclo completo
+        currentConversationHistory = [];
         console.log("DEBUG (saveCurrentSessionHistoryAndStop): currentConversationHistory resettato dopo il tentativo di salvataggio.");
         statusDiv.textContent = "Tentativo di salvataggio completato.";
     } else {
@@ -245,7 +244,6 @@ function sendClientEvent(event) {
 }
 
 function addTranscript(speaker, textContent, itemId) {
-    // Rimuovo il substring per loggare l'intero contenuto se è breve, per un debug migliore
     console.log(`DEBUG (addTranscript - ENTRATA): Speaker='${speaker}', textContent='${textContent}', typeof textContent='${typeof textContent}', itemId='${itemId}'`);
 
     const id = `${speaker}-${itemId || 'general'}`;
@@ -259,7 +257,6 @@ function addTranscript(speaker, textContent, itemId) {
     transcriptDiv.textContent = `${speaker}: ${textContent}`;
     transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight;
 
-    // Condizione per aggiungere alla history
     if ((speaker === "Tu" || speaker === "AI") && typeof textContent === 'string' && textContent.trim() !== '') {
         console.log(`DEBUG (addTranscript - AGGIUNGO A HISTORY): Speaker: ${speaker}, Content: "${textContent}"`);
         currentConversationHistory.push({ speaker, content: textContent });
@@ -300,7 +297,7 @@ function appendToTranscript(speaker, textDelta, itemId) {
             }
         }
         else if (lastEntryInHistory && lastEntryInHistory.speaker === "AI") {
-            if (typeof textDelta === 'string' && textDelta.trim() !== '') { // Solo se il delta ha contenuto
+            if (typeof textDelta === 'string' && textDelta.trim() !== '') {
                 console.log(`DEBUG (appendToTranscript - APPENDO AD AI IN HISTORY): Delta: "${textDelta}"`);
                 lastEntryInHistory.content += textDelta;
             } else if (typeof textDelta === 'string' && textDelta.trim() === '') {
@@ -321,7 +318,6 @@ async function handleFunctionCall(functionCall) {
             const searchQuery = args.termini_di_ricerca;
             console.log("DEBUG (handleFunctionCall): Termini di ricerca per la memoria:", searchQuery);
 
-            // Aggiungiamo alla history che stiamo cercando
             addTranscript("Sistema", `Sto cercando nei ricordi: "${searchQuery}"...`, `search-${functionCall.call_id}`);
 
             const searchResponse = await fetch(`${SEARCH_MEMORY_API_ENDPOINT}?query=${encodeURIComponent(searchQuery)}`);
@@ -335,9 +331,7 @@ async function handleFunctionCall(functionCall) {
             console.log("DEBUG (handleFunctionCall): Risultati da searchMemory API:", searchData);
 
             const functionOutput = JSON.stringify({ results: searchData.results || "Non ho trovato nulla per quei termini." });
-            // Aggiungiamo alla history il risultato (o parte di esso)
             addTranscript("Sistema", `Risultato ricerca: ${ (searchData.results && searchData.results.length > 50) ? searchData.results.substring(0,50) + "..." : searchData.results }`, `search-res-${functionCall.call_id}`);
-
 
             sendClientEvent({
                 type: "conversation.item.create",
@@ -368,7 +362,6 @@ async function handleFunctionCall(functionCall) {
 }
 
 function handleServerEvent(event) {
-    // Logga l'intero oggetto evento per vedere tutti i suoi campi
     console.log(`DEBUG (handleServerEvent): Ricevuto evento server: type='${event.type}', event object:`, JSON.parse(JSON.stringify(event)));
 
     switch (event.type) {
@@ -376,7 +369,6 @@ function handleServerEvent(event) {
             statusDiv.textContent = `Sessione ${event.session.id.slice(-4)} creata. Parla pure!`;
             break;
         case "session.updated":
-            // Nessuna azione specifica richiesta per ora
             break;
         case "input_audio_buffer.speech_started":
             statusDiv.textContent = "Ti sto ascoltando...";
@@ -385,46 +377,46 @@ function handleServerEvent(event) {
             statusDiv.textContent = "Elaborazione audio... Attendo risposta AI...";
             break;
 
-        // ----- MODIFICA IMPORTANTE QUI -----
+        // ----- MODIFICA PRINCIPALE PER TRASCRIZIONE UTENTE -----
         case "conversation.item.created":
-            // Questo evento potrebbe contenere la trascrizione utente se `item.type` è `input_audio_transcription`
-            // e `item.payload.transcript` esiste. La documentazione OpenAI Realtime API potrebbe chiarire
-            // quale evento contiene la trascrizione finale dell'utente.
-            // Per ora, ci affidiamo a `conversation.item.input_audio_transcription.completed`
-            if (event.item && event.item.type === "input_audio_transcription" && event.item.payload && event.item.payload.transcript) {
-                console.log(`DEBUG (handleServerEvent - conversation.item.created - TRASCRIZIONE UTENTE?): transcript='${event.item.payload.transcript}', item_id='${event.item.id}'`);
-                // CHIAMIAMO addTranscript se troviamo una trascrizione qui
+            // Verifichiamo se questo item è una trascrizione dell'utente
+            if (event.item && event.item.type === "input_audio_transcription" && event.item.payload &&
+                typeof event.item.payload.transcript === 'string' && event.item.payload.transcript.trim() !== '') {
+                console.log(`DEBUG (handleServerEvent - conversation.item.created): TROVATA TRASCRIZIONE UTENTE! Transcript='${event.item.payload.transcript}', item_id='${event.item.id}'`);
                 addTranscript("Tu", event.item.payload.transcript, event.item.id);
+            } else if (event.item && event.item.type === "input_audio_transcription") {
+                console.warn(`DEBUG (handleServerEvent - conversation.item.created): Ricevuto item input_audio_transcription MA transcript è assente, non stringa o vuoto. Payload:`, event.item.payload);
             }
             break;
 
+        // Lasciamo questo case per sicurezza, ma non ci aspettiamo più che arrivi
+        // se la trascrizione è in "conversation.item.created"
         case "conversation.item.input_audio_transcription.completed":
-            console.log(`DEBUG (handleServerEvent - transcription.completed): event.transcript='${event.transcript}', typeof=${typeof event.transcript}, item_id='${event.item_id}'`);
+            console.log(`DEBUG (handleServerEvent - transcription.completed - OBSOLETO?): event.transcript='${event.transcript}', item_id='${event.item_id}'`);
             if (event.transcript && typeof event.transcript === 'string' && event.transcript.trim() !== '') {
                 addTranscript("Tu", event.transcript, event.item_id);
             } else {
-                console.warn("DEBUG (handleServerEvent - transcription.completed): Transcript assente, non stringa, o vuoto nell'evento.");
+                console.warn("DEBUG (handleServerEvent - transcription.completed - OBSOLETO?): Transcript assente, non stringa, o vuoto.");
             }
             break;
-        // ----- FINE MODIFICA IMPORTANTE -----
+        // ----- FINE MODIFICA PRINCIPALE -----
 
         case "response.created":
             currentAIResponseId = event.response.id;
-            console.log("DEBUG (handleServerEvent - response.created): currentAIResponseId impostato a", currentAIResponseId, "Output:", event.response.output);
+            // console.log("DEBUG (handleServerEvent - response.created): currentAIResponseId impostato a", currentAIResponseId, "Output:", event.response.output); // Meno verboso
             statusDiv.textContent = "AI sta elaborando...";
             break;
         case "response.text.delta":
         case "response.audio_transcript.delta":
-            // console.log(`DEBUG (handleServerEvent - ${event.type}): event.delta = '${event.delta}', typeof = ${typeof event.delta}, response_id: ${event.response_id}`); // Già loggato da appendToTranscript
             if (typeof event.delta === 'string') {
                 appendToTranscript("AI", event.delta, event.response_id || currentAIResponseId);
                 statusDiv.textContent = "AI sta rispondendo...";
             } else {
-                console.warn(`DEBUG (handleServerEvent - ${event.type}): Delta non è una stringa:`, event.delta);
+                // console.warn(`DEBUG (handleServerEvent - ${event.type}): Delta non è una stringa:`, event.delta); // Meno verboso
             }
             break;
         case "response.done":
-            console.log("DEBUG (handleServerEvent - response.done): Risposta AI completata. Response ID:", event.response.id, "Output:", event.response.output);
+            // console.log("DEBUG (handleServerEvent - response.done): Risposta AI completata. Response ID:", event.response.id, "Output:", event.response.output); // Meno verboso
             if (event.response.output && event.response.output.length > 0 && event.response.output[0].type === "function_call") {
                 console.log("DEBUG (handleServerEvent - response.done): Rilevata function_call.");
                 const functionCall = event.response.output[0];
@@ -448,12 +440,7 @@ function handleServerEvent(event) {
             }
             break;
         default:
-             // Logga qualsiasi altro tipo di evento per vedere se la trascrizione utente arriva con un nome diverso
              console.log(`DEBUG (handleServerEvent - TIPO EVENTO NON GESTITO ESPLICITAMENTE): type='${event.type}'. Evento completo:`, JSON.parse(JSON.stringify(event)));
-             // Se sospetti che un evento non gestito contenga la trascrizione utente:
-             // if (event.type === "NOME_EVENTO_SOSPETTO" && event.qualche_campo_con_testo) {
-             //    addTranscript("Tu", event.qualche_campo_con_testo, event.id_univoco_evento || Date.now());
-             // }
             break;
     }
 }
@@ -468,6 +455,6 @@ window.addEventListener('beforeunload', () => {
     console.log("DEBUG: Evento 'beforeunload' rilevato.");
     if (pc && pc.connectionState !== "closed") {
         console.log("DEBUG (beforeunload): Connessione WebRTC attiva, chiamo stopConversation per pulizia.");
-        stopConversation(); // Pulisce le risorse, il salvataggio dovrebbe essere triggerato da onconnectionstatechange se necessario
+        stopConversation();
     }
 });
