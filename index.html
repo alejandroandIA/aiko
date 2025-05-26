@@ -2,26 +2,43 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AIKO</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Conversazione con Aiko</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
-        <h1>Conversazione Realtime con AI</h1>
-        <div id="controls">
-            <button id="startButton">Avvia Conversazione</button>
-            <button id="stopButton" disabled>Termina Conversazione</button>
-        </div>
-        <div id="status">Pronto. Clicca "Avvia" per iniziare.</div>
-        <div class="transcript-container">
-            <h2>Trascrizioni:</h2>
-            <div id="transcripts">
-                <!-- Le trascrizioni appariranno qui -->
+    <div class="app-container">
+        <header class="app-header">
+            <h1>Parla con Aiko</h1>
+        </header>
+
+        <main class="chat-main">
+            <div class="controls-container">
+                <button id="startButton" class="btn btn-start">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0-6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"></path></svg>
+                    <span>Avvia</span>
+                </button>
+                <button id="stopButton" class="btn btn-stop" disabled>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M6 18h12V6H6v12zM8 8h8v8H8V8z"></path></svg>
+                    <span>Termina</span>
+                </button>
             </div>
-        </div>
-        <audio id="aiAudioPlayer" autoplay></audio>
+
+            <div id="status" class="status-bar">Pronto per iniziare una nuova avventura!</div>
+
+            <div class="transcripts-container">
+                <div id="transcripts">
+                    <!-- Le trascrizioni appariranno qui -->
+                </div>
+            </div>
+        </main>
+
+        <audio id="aiAudioPlayer" style="display: none;"></audio>
     </div>
-    <script src="script.js"></script>
+    <script src="./src/config/aiConfig.js" type="module"></script> <!-- Carica la configurazione -->
+    <script src="script.js" type="module"></script> <!-- Assicurati che script.js possa importare da aiConfig -->
 </body>
 </html>
