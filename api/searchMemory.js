@@ -1,3 +1,4 @@
+// api/searchMemory.js
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
@@ -17,8 +18,7 @@ export default async function handler(req, res) {
     const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-        // Log specifico per il server
-        console.error('ERRORE FATALE in api/searchMemory: SUPABASE_URL o SUPABASE_SERVICE_KEY non sono definite nelle variabili d\'ambiente di Vercel.');
+        console.error('ERRORE FATALE in api/searchMemory: SUPABASE_URL o SUPABASE_SERVICE_KEY non sono definite.');
         return res.status(500).json({ error: 'Configurazione del server incompleta: Supabase URL o Key non configurate.' });
     }
 
@@ -28,7 +28,7 @@ export default async function handler(req, res) {
         const { query } = req.query;
 
         if (!query || typeof query !== 'string' || query.trim() === '') {
-            console.warn('api/searchMemory: Richiesta con parametro query mancante, non stringa, o vuoto. Query ricevuta:', query);
+            console.warn('api/searchMemory: Richiesta con parametro query mancante, non stringa, o vuoto. Query:', query);
             return res.status(400).json({ error: 'Il parametro query di ricerca è richiesto, deve essere una stringa e non può essere vuoto.' });
         }
 
@@ -39,14 +39,17 @@ export default async function handler(req, res) {
             .select('speaker, content, created_at')
             .ilike('content', `%${searchTerm}%`)
             .order('created_at', { ascending: false })
-            .limit(5);
+            .limit(10); // Aumentato un po' il limite per dare più contesto
 
         if (error) {
             console.error('Errore Supabase (select) in api/searchMemory:', error);
             return res.status(500).json({ error: 'Errore durante la ricerca nella memoria.', details: error.message });
         }
-        
-        const formattedResults = data.map(item => `${item.speaker} (il ${new Date(item.created_at).toLocaleDateString('it-IT')}): ${item.content}`).join('\n---\n');
+
+        const formattedResults = data.map(item => {
+            const speakerLabel = item.speaker === 'Tu' ? 'Alejandro' : 'Aiko';
+            return `${speakerLabel} (il ${new Date(item.created_at).toLocaleDateString('it-IT')} alle ${new Date(item.created_at).toLocaleTimeString('it-IT')}): ${item.content}`;
+        }).join('\n---\n');
 
         res.setHeader('Access-Control-Allow-Origin', '*');
         return res.status(200).json({ results: formattedResults || "Nessun ricordo trovato per quei termini." });
