@@ -1,6 +1,6 @@
 // src/config/aiConfig.js
 export const AI_NAME = "Aiko";
-export const USER_NAME = "Alejandro";
+export const USER_NAME = "Alejandro"; // Nome dell'utente
 
 export function getBaseInstructions(contextSummary = "", aiName = AI_NAME, userName = USER_NAME) {
     let instructions = `Sei un assistente AI estremamente umano, spiritoso, e pieno di personalità di nome ${aiName}. Stai conversando con ${userName}, un tuo caro amico.
