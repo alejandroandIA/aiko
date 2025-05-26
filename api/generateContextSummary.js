@@ -1,6 +1,6 @@
 // api/generateContextSummary.js
 import { createClient } from '@supabase/supabase-js';
-import { USER_NAME, AI_NAME } from '../src/config/aiConfig.js'; // <<<< PERCORSO CORRETTO
+import { USER_NAME, AI_NAME } from '../src/config/aiConfig.js';
 
 export default async function handler(req, res) {
     if (req.method !== 'GET') {
@@ -24,7 +24,7 @@ export default async function handler(req, res) {
             .from('memoria_chat')
             .select('speaker, content, created_at')
             .order('created_at', { ascending: false })
-            .limit(20);
+            .limit(25); // Aumentato un po' per un riassunto più ricco
 
         if (historyError) {
             console.error('Errore recupero cronologia per riassunto:', historyError);
@@ -39,12 +39,12 @@ export default async function handler(req, res) {
             .map(entry => `${entry.speaker === 'Tu' ? USER_NAME : AI_NAME}: ${entry.content}`)
             .join('\n');
 
-        const summaryPrompt = `Data la seguente cronologia di chat tra ${USER_NAME} e ${AI_NAME}, estrai i punti chiave, le preferenze menzionate da ${USER_NAME}, i dati personali rivelati da ${USER_NAME} e i temi principali discussi. Fornisci un riassunto molto conciso (max 150-200 parole) focalizzato sulle informazioni riguardanti ${USER_NAME}. Questo riassunto darà contesto ad ${AI_NAME} all'inizio di una nuova conversazione.
+        const summaryPrompt = `Data la seguente cronologia di chat tra ${USER_NAME} (l'utente) e ${AI_NAME} (tu, l'IA), estrai i punti chiave, le preferenze menzionate da ${USER_NAME}, i dati personali rivelati da ${USER_NAME} (nomi, luoghi, date importanti, dettagli familiari, email, ecc.) e i temi principali discussi. Fornisci un riassunto molto conciso e fattuale (massimo 200 parole) focalizzato sulle informazioni riguardanti ${USER_NAME}. Questo riassunto ti darà contesto all'inizio di una nuova conversazione.
 
 Cronologia chat recente:
 ${formattedHistory}
 
-Riassunto conciso dei fatti e dettagli chiave APPRESI SU ${USER_NAME} e sulle vostre interazioni passate:`;
+Riassunto conciso dei fatti e dettagli chiave APPRESI SU ${USER_NAME} e sulle vostre interazioni passate (massimo 200 parole, solo i fatti più importanti e recenti):`;
 
         const openaiSummaryResponse = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
@@ -52,10 +52,11 @@ Riassunto conciso dei fatti e dettagli chiave APPRESI SU ${USER_NAME} e sulle vo
             body: JSON.stringify({
                 model: "gpt-4o",
                 messages: [
-                    { role: "system", content: `Sei un assistente che riassume conversazioni tra ${USER_NAME} e ${AI_NAME}, focalizzandoti sui dettagli appresi su ${USER_NAME}.` },
+                    { role: "system", content: `Sei un assistente che riassume conversazioni tra ${USER_NAME} e ${AI_NAME}, focalizzandoti sui dettagli appresi su ${USER_NAME}. Sii conciso e fattuale.` },
                     { role: "user", content: summaryPrompt }
                 ],
-                temperature: 0.2, max_tokens: 250,
+                temperature: 0.1, // Molto fattuale
+                max_tokens: 300, // Spazio per un riassunto un po' più lungo
             }),
         });
 
