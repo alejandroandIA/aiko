@@ -165,7 +165,7 @@ async function saveCurrentSessionHistoryAndStop() {
     if (currentConversationHistory.length > 0) {
         statusDiv.textContent = "Salvataggio conversazione...";
         console.log("DEBUG (saveCurrentSessionHistoryAndStop): Inizio ciclo di salvataggio...");
-        let entriesSaved = 0;
+        let entriesSavedCount = 0;
         for (const entry of currentConversationHistory) {
             console.log("DEBUG (saveCurrentSessionHistoryAndStop): Analizzo entry per salvataggio:", JSON.stringify(entry));
 
@@ -193,14 +193,15 @@ async function saveCurrentSessionHistoryAndStop() {
                     const errorData = await saveResponse.json().catch(() => ({ error: "Errore sconosciuto nel salvataggio", details: `Status: ${saveResponse.status}` }));
                     console.error(`DEBUG (saveCurrentSessionHistoryAndStop): Errore dal server saveToMemory (${saveResponse.status}):`, errorData, "Per entry:", entry);
                 } else {
-                    entriesSaved++;
-                    console.log(`DEBUG (saveCurrentSessionHistoryAndStop): Messaggio "${entry.content.substring(0,20)}..." salvato.`);
+                    entriesSavedCount++;
+                    const responseData = await saveResponse.json();
+                    console.log(`DEBUG (saveCurrentSessionHistoryAndStop): Messaggio "${entry.content.substring(0,20)}..." salvato. Risposta server:`, responseData);
                 }
             } catch (saveError) {
                 console.error("DEBUG (saveCurrentSessionHistoryAndStop): Errore fetch durante il salvataggio:", saveError, "Per entry:", entry);
             }
         }
-        console.log(`DEBUG (saveCurrentSessionHistoryAndStop): Fine ciclo di salvataggio. ${entriesSaved} entries inviate per il salvataggio.`);
+        console.log(`DEBUG (saveCurrentSessionHistoryAndStop): Fine ciclo di salvataggio. ${entriesSavedCount} entries inviate per il salvataggio.`);
         currentConversationHistory = [];
         console.log("DEBUG (saveCurrentSessionHistoryAndStop): currentConversationHistory resettato dopo il tentativo di salvataggio.");
         statusDiv.textContent = "Tentativo di salvataggio completato.";
@@ -208,7 +209,7 @@ async function saveCurrentSessionHistoryAndStop() {
         console.log("DEBUG (saveCurrentSessionHistoryAndStop): currentConversationHistory è vuoto, nessun salvataggio necessario.");
         statusDiv.textContent = "Nessuna conversazione da salvare.";
     }
-    stopConversation(); // Chiama stopConversation in ogni caso per pulire
+    stopConversation();
 }
 
 function stopConversation() {
@@ -286,22 +287,16 @@ function appendToTranscript(speaker, textDelta, itemId) {
     if (speaker === "AI") {
         const lastEntryInHistory = currentConversationHistory.length > 0 ? currentConversationHistory[currentConversationHistory.length - 1] : null;
 
-        // Se è una nuova entry visuale per l'AI OPPURE se l'ultima entry in history non è dell'AI,
-        // significa che dobbiamo creare una nuova entry AI in history.
-        // Questo accade solitamente con il primo delta di una nuova risposta AI.
         if (isNewVisualEntry || !lastEntryInHistory || lastEntryInHistory.speaker !== "AI") {
             if (typeof textDelta === 'string' && textDelta.trim() !== '') {
                 console.log(`DEBUG (appendToTranscript - NUOVA AI ENTRY IN HISTORY): Delta: "${textDelta.substring(0,30)}..."`);
                 currentConversationHistory.push({ speaker: "AI", content: textDelta });
             } else if (typeof textDelta === 'string' && textDelta.trim() === '') {
-                 // Ricevuto un delta vuoto per una "nuova" entry AI. Potrebbe essere un placeholder.
-                 // Non lo aggiungiamo ancora all'history, aspettiamo un delta con contenuto.
                  console.log(`DEBUG (appendToTranscript - NUOVA AI ENTRY CON DELTA VUOTO): Non aggiungo a history. Delta: "${textDelta}"`);
             } else {
                 console.warn(`DEBUG (appendToTranscript - NUOVA AI ENTRY CON DELTA NON STRINGA): Non aggiungo a history. Delta: ${textDelta}, typeof: ${typeof textDelta}`);
             }
         }
-        // Se l'ultima entry in history è già dell'AI, e il delta è valido, appendiamo.
         else if (lastEntryInHistory && lastEntryInHistory.speaker === "AI") {
             if (typeof textDelta === 'string' && textDelta.trim() !== '') {
                 console.log(`DEBUG (appendToTranscript - APPENDO AD AI IN HISTORY): Delta: "${textDelta.substring(0,30)}..."`);
@@ -314,7 +309,6 @@ function appendToTranscript(speaker, textDelta, itemId) {
         }
     }
 }
-
 
 async function handleFunctionCall(functionCall) {
     if (functionCall.name === "cerca_nella_mia_memoria_personale") {
@@ -382,35 +376,41 @@ function handleServerEvent(event) {
             statusDiv.textContent = "Elaborazione audio... Attendo risposta AI...";
             break;
         case "conversation.item.input_audio_transcription.completed":
-            console.log("DEBUG (handleServerEvent - transcription.completed): event.transcript =", event.transcript, "typeof =", typeof event.transcript);
+            console.log(`DEBUG (handleServerEvent - transcription.completed): event.transcript = '${event.transcript}', typeof = ${typeof event.transcript}, item_id = ${event.item_id}`);
             if (event.transcript) {
                 addTranscript("Tu", event.transcript, event.item_id);
+            } else {
+                console.warn("DEBUG (handleServerEvent - transcription.completed): Transcript assente o vuoto nell'evento.");
             }
             break;
         case "response.created":
             currentAIResponseId = event.response.id;
-            console.log("DEBUG (handleServerEvent - response.created): currentAIResponseId impostato a", currentAIResponseId);
-            // Non chiamiamo appendToTranscript con stringa vuota qui.
-            // Aspettiamo il primo delta per creare/aggiornare l'entry in history.
+            console.log("DEBUG (handleServerEvent - response.created): currentAIResponseId impostato a", currentAIResponseId, "Output:", event.response.output);
             statusDiv.textContent = "AI sta elaborando...";
             break;
         case "response.text.delta":
-            console.log("DEBUG (handleServerEvent - response.text.delta): event.delta =", event.delta, "typeof =", typeof event.delta, "response_id:", event.response_id);
-            if (typeof event.delta === 'string') { // Controlliamo se è una stringa, anche vuota
+        case "response.audio_transcript.delta": // Gestisce entrambi i tipi di delta per il testo AI
+            console.log(`DEBUG (handleServerEvent - ${event.type}): event.delta = '${event.delta}', typeof = ${typeof event.delta}, response_id: ${event.response_id}`);
+            if (typeof event.delta === 'string') {
                 appendToTranscript("AI", event.delta, event.response_id || currentAIResponseId);
-                 statusDiv.textContent = "AI sta rispondendo...";
+                statusDiv.textContent = "AI sta rispondendo...";
             } else {
-                console.warn("DEBUG (handleServerEvent - response.text.delta): Delta non è una stringa:", event.delta);
+                console.warn(`DEBUG (handleServerEvent - ${event.type}): Delta non è una stringa:`, event.delta);
             }
             break;
         case "response.done":
-            console.log("DEBUG (handleServerEvent - response.done): Risposta AI completata. Response ID:", event.response.id);
+            console.log("DEBUG (handleServerEvent - response.done): Risposta AI completata. Response ID:", event.response.id, "Output:", event.response.output);
             if (event.response.output && event.response.output.length > 0 && event.response.output[0].type === "function_call") {
                 console.log("DEBUG (handleServerEvent - response.done): Rilevata function_call.");
                 const functionCall = event.response.output[0];
                 handleFunctionCall(functionCall);
             } else {
-                statusDiv.textContent = "Risposta AI completata. Parla pure!";
+                const lastEntry = currentConversationHistory.length > 0 ? currentConversationHistory[currentConversationHistory.length - 1] : null;
+                if (lastEntry && lastEntry.speaker === "AI" && lastEntry.content && lastEntry.content.trim() !== '') {
+                    statusDiv.textContent = "Risposta AI completata. Parla pure!";
+                } else if (!lastEntry || lastEntry.speaker !== "AI" || !lastEntry.content || lastEntry.content.trim() === '') {
+                     statusDiv.textContent = "Pronto per input o funzione AI eseguita. Parla pure!";
+                }
             }
             currentAIResponseId = null;
             break;
@@ -436,9 +436,7 @@ startButton.addEventListener('click', startConversation);
 window.addEventListener('beforeunload', () => {
     console.log("DEBUG: Evento 'beforeunload' rilevato.");
     if (pc && pc.connectionState !== "closed") {
-        console.log("DEBUG (beforeunload): Connessione WebRTC attiva, chiamo stopConversation.");
-        // Non chiamare saveCurrentSessionHistoryAndStop() qui perché è sincrono e potrebbe non completare.
-        // La chiusura della connessione dovrebbe già triggerare il salvataggio se necessario.
-        stopConversation(); // Pulisce le risorse
+        console.log("DEBUG (beforeunload): Connessione WebRTC attiva, chiamo stopConversation per pulizia.");
+        stopConversation();
     }
 });
