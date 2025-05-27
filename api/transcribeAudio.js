@@ -1,6 +1,7 @@
 // api/transcribeAudio.js
 import FormData from 'form-data';
 
+// Funzione helper per leggere il corpo della richiesta come buffer
 async function getReqBodyBuffer(req) {
     return new Promise((resolve, reject) => {
         const chunks = [];
@@ -24,67 +25,65 @@ export default async function handler(req, res) {
 
     try {
         const audioBlobBuffer = await getReqBodyBuffer(req);
-        const clientContentType = req.headers['content-type']; // Prendiamo il content type inviato dal client
+        const clientContentType = req.headers['content-type'] || 'audio/webm';
+        
         console.log(`DEBUG transcribeAudio: Ricevuto buffer audio, lunghezza: ${audioBlobBuffer.length}, Content-Type dal client: ${clientContentType}`);
-
 
         if (!audioBlobBuffer || audioBlobBuffer.length === 0) {
             return res.status(400).json({ error: "Nessun dato audio ricevuto." });
         }
-        if (audioBlobBuffer.length < 1000) { // Whisper potrebbe rifiutare file troppo piccoli
-            console.warn("transcribeAudio: File audio molto piccolo, potrebbe essere rifiutato da Whisper.");
+         if (audioBlobBuffer.length < 200) { // Whisper potrebbe rifiutare file troppo piccoli
+            console.warn("transcribeAudio: File audio molto piccolo, potrebbe essere rifiutato. Lunghezza:", audioBlobBuffer.length);
         }
 
         const formData = new FormData();
-        // Usiamo un nome file con estensione che corrisponda al contentType se possibile
-        let filename = 'audio.webm'; // Default
-        if (clientContentType && clientContentType.includes('mp4')) {
-            filename = 'audio.mp4';
-        } else if (clientContentType && clientContentType.includes('mpeg')) { // per mp3
-            filename = 'audio.mp3';
-        } else if (clientContentType && clientContentType.includes('wav')) {
-            filename = 'audio.wav';
-        }
-        // Aggiungi altri formati supportati da Whisper se necessario
+        let filename = 'audio.unknown';
+        if (clientContentType.includes('webm')) filename = 'audio.webm';
+        else if (clientContentType.includes('mp4')) filename = 'audio.mp4';
+        else if (clientContentType.includes('mp3')) filename = 'audio.mp3';
+        else if (clientContentType.includes('mpeg')) filename = 'audio.mpeg';
+        else if (clientContentType.includes('wav')) filename = 'audio.wav';
+        else if (clientContentType.includes('ogg')) filename = 'audio.ogg';
 
-        formData.append('file', audioBlobBuffer, { filename: filename, contentType: clientContentType || 'audio/webm' });
+        formData.append('file', audioBlobBuffer, {
+            filename: filename,
+            contentType: clientContentType,
+        });
         formData.append('model', 'whisper-1');
         formData.append('language', 'it');
-        formData.append('response_format', 'json'); // Assicura che la risposta sia JSON
+        formData.append('response_format', 'json');
 
-        console.log(`DEBUG transcribeAudio: Invio a Whisper con filename: ${filename}, contentType: ${clientContentType || 'audio/webm'}`);
+        console.log(`DEBUG transcribeAudio: Invio a Whisper con filename: ${filename}, effective contentType: ${clientContentType}`);
 
         const whisperResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
             method: "POST",
             headers: {
                 "Authorization": `Bearer ${OPENAI_API_KEY}`,
-                ...formData.getHeaders()
+                ...formData.getHeaders(),
             },
             body: formData,
         });
 
-        const responseBodyText = await whisperResponse.text(); // Leggi sempre il corpo per debug
+        const responseBodyText = await whisperResponse.text();
         console.log("DEBUG transcribeAudio: Risposta grezza da Whisper:", responseBodyText);
 
         if (!whisperResponse.ok) {
-            let errorDetails = `Errore ${whisperResponse.status}: ${responseBodyText}`;
+            let errorDetails = `Errore ${whisperResponse.status} da Whisper: ${responseBodyText}`;
             try {
-                const errorData = JSON.parse(responseBodyText); // Prova a parsare il testo come JSON
+                const errorData = JSON.parse(responseBodyText);
                 errorDetails = errorData.error?.message || JSON.stringify(errorData);
-            } catch (e) {
-                // Se non è JSON, errorDetails contiene già responseBodyText
-            }
+            } catch (e) { /* errorDetails già contiene il testo grezzo */ }
             console.error("Errore API Whisper:", whisperResponse.status, errorDetails);
             return res.status(whisperResponse.status).json({ error: "Errore durante la trascrizione.", details: errorDetails });
         }
 
-        const transcriptionData = JSON.parse(responseBodyText); // Ora dovrebbe essere JSON valido
+        const transcriptionData = JSON.parse(responseBodyText);
         
         res.setHeader('Access-Control-Allow-Origin', '*');
         return res.status(200).json({ transcript: transcriptionData.text });
 
     } catch (error) {
-        console.error("Errore generico in transcribeAudio:", error);
+        console.error("Errore generico in transcribeAudio:", error.message, error.stack);
         return res.status(500).json({ error: "Errore interno del server durante la trascrizione.", details: error.message });
     }
 }
