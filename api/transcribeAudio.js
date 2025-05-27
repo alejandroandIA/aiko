@@ -1,7 +1,15 @@
 // api/transcribeAudio.js
-import FormData from 'form-data'; // Importa esplicitamente
-// Non serve 'node-fetch' se l'ambiente Node di Vercel è >= 16.15 (per fetch globale) o >=18 (per FormData globale)
-// Ma usare form-data esplicito è più sicuro per la parte multipart.
+import FormData from 'form-data';
+
+// Funzione helper per leggere il corpo della richiesta come buffer
+async function getReqBodyBuffer(req) {
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        req.on('data', chunk => chunks.push(chunk));
+        req.on('end', () => resolve(Buffer.concat(chunks)));
+        req.on('error', err => reject(err));
+    });
+}
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -16,34 +24,38 @@ export default async function handler(req, res) {
     }
 
     try {
-        const audioBlobBuffer = await req.buffer(); 
-        
+        const audioBlobBuffer = await getReqBodyBuffer(req); // Usa la funzione helper
+
         if (!audioBlobBuffer || audioBlobBuffer.length === 0) {
             return res.status(400).json({ error: "Nessun dato audio ricevuto." });
         }
 
         const formData = new FormData();
-        // Quando si usa il pacchetto 'form-data', si passa il buffer direttamente.
-        // Il terzo argomento (nome file) è importante per Whisper.
-        formData.append('file', audioBlobBuffer, { filename: 'audio.webm', contentType: 'audio/webm' });
+        // Determina il contentType dal client o usa un default ragionevole
+        const contentType = req.headers['content-type'] || 'audio/webm';
+        formData.append('file', audioBlobBuffer, { filename: 'audio.webm', contentType: contentType });
         formData.append('model', 'whisper-1');
         formData.append('language', 'it');
-        // formData.append('response_format', 'text'); // Whisper restituisce JSON di default, che contiene 'text'
 
         const whisperResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
             method: "POST",
             headers: {
                 "Authorization": `Bearer ${OPENAI_API_KEY}`,
-                // 'Content-Type' viene impostato da FormData con il boundary corretto
-                ...formData.getHeaders() // Importante quando si usa il pacchetto 'form-data' con fetch
+                ...formData.getHeaders()
             },
-            body: formData, // formData qui è un'istanza del pacchetto 'form-data'
+            body: formData,
         });
 
         if (!whisperResponse.ok) {
-            const errorData = await whisperResponse.json().catch(() => ({}));
-            console.error("Errore API Whisper:", whisperResponse.status, errorData.error || await whisperResponse.text());
-            return res.status(whisperResponse.status).json({ error: "Errore durante la trascrizione.", details: errorData.error?.message || "Dettagli non disponibili" });
+            let errorDetails = "Dettagli non disponibili";
+            try {
+                const errorData = await whisperResponse.json();
+                errorDetails = errorData.error?.message || JSON.stringify(errorData);
+            } catch (e) {
+                errorDetails = await whisperResponse.text();
+            }
+            console.error("Errore API Whisper:", whisperResponse.status, errorDetails);
+            return res.status(whisperResponse.status).json({ error: "Errore durante la trascrizione.", details: errorDetails });
         }
 
         const transcriptionData = await whisperResponse.json();
