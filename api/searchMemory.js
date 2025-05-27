@@ -1,6 +1,7 @@
 // api/searchMemory.js
 import { createClient } from '@supabase/supabase-js';
-import { USER_NAME, AI_NAME } from '../src/config/aiConfig.js';
+// Non importiamo più USER_NAME, AI_NAME da aiConfig qui,
+// l'IA userà i risultati grezzi e le sue istruzioni per interpretarli.
 
 export default async function handler(req, res) {
     if (req.method === 'OPTIONS') {
@@ -19,7 +20,7 @@ export default async function handler(req, res) {
     const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-        console.error('ERRORE FATALE api/searchMemory: SUPABASE_URL o SUPABASE_SERVICE_KEY non definite.');
+        console.error('ERRORE FATALE api/searchMemory: Variabili ambiente mancanti.');
         return res.status(500).json({ error: 'Configurazione server incompleta.' });
     }
 
@@ -31,45 +32,31 @@ export default async function handler(req, res) {
             return res.status(400).json({ error: 'Parametro query richiesto e non vuoto.' });
         }
         const searchTerm = String(query).trim();
+
+        // Recupera più risultati, l'IA filtrerà/sintetizzerà
         const { data, error } = await supabase
             .from('memoria_chat')
-            .select('speaker, content, created_at')
+            .select('speaker, content, created_at') // Includi speaker per contesto
             .ilike('content', `%${searchTerm}%`)
-            .order('created_at', { ascending: false })
-            .limit(5); // Ridotto a 5 per output più conciso all'IA
+            .order('created_at', { ascending: false }) // I più recenti sono spesso più rilevanti
+            .limit(15); // Aumentato a 15 per fornire più dati grezzi all'IA
 
         if (error) {
             console.error('Errore Supabase (select) api/searchMemory:', error);
             return res.status(500).json({ error: 'Errore ricerca memoria.', details: error.message });
         }
 
-        // MODIFICA: Restituisci un array di oggetti invece di una singola stringa formattata
-        // L'IA dovrà poi processare questo array.
-        const resultsArray = data.map(item => ({
-            speaker: item.speaker === 'Tu' ? USER_NAME : AI_NAME,
-            timestamp: new Date(item.created_at).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' }),
-            content: item.content
-        }));
-
-        // Per l'IA, potrebbe essere meglio una stringa, ma assicuriamoci che sia ben formattata.
-        // Oppure, l'IA può essere istruita a gestire un array di risultati.
-        // Per ora, proviamo con una stringa, ma con una formattazione più semplice e robusta.
-        let formattedResultsForAI = "Nessun ricordo trovato per quei termini.";
-        if (data && data.length > 0) {
-            formattedResultsForAI = data.map(item => {
-                const speakerLabel = item.speaker === 'Tu' ? USER_NAME : AI_NAME;
-                // Semplifichiamo la stringa per ridurre rischi di caratteri problematici
-                return `[${new Date(item.created_at).toLocaleDateString('it-IT')}] ${speakerLabel}: ${item.content.replace(/"/g, "'").substring(0, 200)}${item.content.length > 200 ? '...' : ''}`;
-            }).join('\n---\n');
-        }
+        // Restituisci i dati più grezzi possibile, l'IA è brava a processarli se istruita bene.
+        // Formattiamo solo per renderlo leggibile come "ricordo".
+        const formattedResults = data && data.length > 0
+            ? data.map(item => `[Ricordo del ${new Date(item.created_at).toLocaleDateString('it-IT')} - Parlante: ${item.speaker === 'Tu' ? 'Alejandro' : 'Aiko'}]: "${item.content}"`).join('\n---\n')
+            : `Nessun ricordo trovato per i termini di ricerca: "${searchTerm}".`;
 
         res.setHeader('Access-Control-Allow-Origin', '*');
-        // Invia la stringa formattata, sperando che la pulizia aiuti
-        return res.status(200).json({ results: formattedResultsForAI });
+        return res.status(200).json({ results: formattedResults });
 
     } catch (e) {
         console.error('Errore generico api/searchMemory:', e);
-        // In caso di errore qui, assicurati di restituire un JSON valido
-        return res.status(500).json({ error: 'Errore interno server durante la ricerca.', details: e.message });
+        return res.status(500).json({ error: 'Errore interno server.', details: e.message });
     }
 }
