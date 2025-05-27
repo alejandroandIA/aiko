@@ -185,7 +185,7 @@ async function startConversation() {
                 }
             });
         };
-        dc.onmessage = (event) => {
+        dc.onmessage = (event) => { // CORREZIONE DEL CATCH QUI
             let eventData;
             try {
                 if (typeof event.data === 'string') {
@@ -195,9 +195,9 @@ async function startConversation() {
                     console.warn("dc.onmessage: event.data non è una stringa:", event.data);
                 }
             } catch (e) {
-                console.error("Errore durante il parsing del JSON da event.data o nell'esecuzione di handleServerEvent:", e);
-                console.error("Dati grezzi (se stringa):", typeof event.data === 'string' ? event.data : "event.data non era stringa");
-                if (statusDiv) statusDiv.textContent = "Errore: Messaggio server non valido.";
+                console.error("[dc.onmessage catch] Errore:", e);
+                console.error("[dc.onmessage catch] Dati grezzi (se stringa):", typeof event.data === 'string' ? event.data.substring(0, 500) + "..." : "event.data non era stringa");
+                if (statusDiv) statusDiv.textContent = "Errore: Messaggio server non interpretabile.";
             }
         };
         dc.onclose = () => console.log("DEBUG: Data channel chiuso.");
@@ -282,7 +282,7 @@ function addTranscript(speaker, textContent, itemId) {
         div.className = speaker.toLowerCase();
         transcriptsDiv.appendChild(div);
     }
-    div.innerHTML = `<strong>${speaker === 'Tu' ? 'Alejandro' : 'Aiko'}:</strong> ${textContent}`; // Usa Aiko come nome IA
+    div.innerHTML = `<strong>${speaker === 'Tu' ? 'Alejandro' : 'Aiko'}:</strong> ${textContent}`;
     transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight;
 
     if ((speaker === "Tu" || speaker === "AI" || speaker === "Sistema") && typeof textContent === 'string' && textContent.trim() !== '') {
@@ -294,10 +294,6 @@ function addTranscript(speaker, textContent, itemId) {
 }
 
 function appendToTranscript(speaker, textDelta, itemId) {
-    // CORREZIONE: Assicura che itemId sia sempre un valore valido per l'ID DOM.
-    // Se itemId è null o undefined (come quando currentAIResponseId è null all'inizio),
-    // potremmo usare un ID di fallback o l'ID della risposta corrente se disponibile.
-    // L'itemId passato da response.audio_transcript.delta è event.response_id.
     const domItemId = itemId || 'ai-streaming-response';
     const id = `${speaker}-${domItemId}`;
 
@@ -308,7 +304,7 @@ function appendToTranscript(speaker, textDelta, itemId) {
         div = document.createElement('div');
         div.id = id;
         div.className = speaker.toLowerCase();
-        div.innerHTML = `<strong>Aiko:</strong> `; // Nome IA fisso qui
+        div.innerHTML = `<strong>Aiko:</strong> `;
         transcriptsDiv.appendChild(div);
     }
     div.innerHTML += textDelta;
@@ -318,7 +314,6 @@ function appendToTranscript(speaker, textDelta, itemId) {
         const lastEntry = currentConversationHistory.length > 0 ? currentConversationHistory[currentConversationHistory.length - 1] : null;
         if (isNew || !lastEntry || lastEntry.speaker !== "AI") {
             if (typeof textDelta === 'string' && textDelta.trim() !== '') {
-                 console.log(`DEBUG (appendToTranscript - NUOVA AI ENTRY IN HISTORY): Content: "${textDelta.substring(0,30)}..."`);
                 currentConversationHistory.push({ speaker: "AI", content: textDelta });
             }
         } else if (lastEntry.speaker === "AI") {
@@ -398,8 +393,9 @@ function handleServerEvent(event) {
             }
             break;
 
-        case "conversation.item.input_audio_transcription.delta": // Non usato per la history, solo per feedback potenziale
-        case "conversation.item.input_audio_transcription.completed": // Non usato per la history
+        // Non usiamo più questi eventi OpenAI Realtime per la trascrizione utente finale, ci affidiamo a Whisper
+        case "conversation.item.input_audio_transcription.delta":
+        case "conversation.item.input_audio_transcription.completed":
         case "conversation.item.created":
         case "conversation.item.updated":
             if (event.item && event.item.role === "user") {
@@ -408,12 +404,11 @@ function handleServerEvent(event) {
             break;
 
         case "response.created":
-            // currentAIResponseId = event.response.id; // Non strettamente necessario se appendToTranscript usa event.response_id
             if (statusDiv) statusDiv.textContent = "Aiko sta pensando...";
             break;
-        case "response.audio_transcript.delta":
+        case "response.audio_transcript.delta": // Per l'IA
             if (typeof event.delta === 'string') {
-                appendToTranscript("AI", event.delta, event.response_id); // Usa event.response_id
+                appendToTranscript("AI", event.delta, event.response_id);
             }
             if (statusDiv) statusDiv.textContent = "Aiko risponde...";
             break;
