@@ -98,12 +98,7 @@ async function startConversation() {
                         description: `Cerca nelle conversazioni passate con Alejandro per trovare informazioni specifiche, dettagli personali, preferenze o rispondere a domande su eventi precedenti che lo riguardano. Se ti chiede dell'ultima conversazione o di cosa parlavate, prova a usare come termini di ricerca parole chiave significative delle sue ultime affermazioni (se le hai dal riassunto del contesto) o temi generali recenti.`,
                         parameters: {
                             type: "object",
-                            properties: {
-                                termini_di_ricerca: {
-                                    type: "string",
-                                    description: `Termini di ricerca specifici e concisi (2-4 parole chiave) per trovare informazioni nella memoria. Se Alejandro chiede un riepilogo generale o dell'ultima conversazione, identifica i concetti chiave più recenti o specifici di cui potresti aver bisogno.`
-                                }
-                            },
+                            properties: { termini_di_ricerca: { type: "string", description: `Termini di ricerca specifici e concisi (2-4 parole chiave) per trovare informazioni nella memoria. Se Alejandro chiede un riepilogo generale o dell'ultima conversazione, identifica i concetti chiave più recenti o specifici di cui potresti aver bisogno.` } },
                             required: ["termini_di_ricerca"]
                         }
                     }]
@@ -232,19 +227,65 @@ async function handleFunctionCall(functionCall) {
             const args = JSON.parse(functionCall.arguments);
             const searchQuery = args.termini_di_ricerca;
             addTranscript("Sistema", `Aiko cerca: "${searchQuery}"...`, `search-${functionCall.call_id}`);
-            const resp = await fetch(`${SEARCH_MEMORY_API_ENDPOINT}?query=${encodeURIComponent(searchQuery)}`);
-            let resultsText = "Errore durante la ricerca.";
-            if (resp.ok) { const data = await resp.json(); resultsText = data.results || "Nessun ricordo trovato."; }
-            else { const errD = await resp.json().catch(() => ({})); resultsText = `Errore ricerca (${resp.status}): ${errD.error || ''}`; }
 
-            addTranscript("Sistema", `Risultato per "${searchQuery}": ${resultsText.substring(0,150)}...`, `search-res-${functionCall.call_id}`);
-            sendClientEvent({ type: "conversation.item.create", item: { type: "function_call_output", call_id: functionCall.call_id, output: JSON.stringify({ results: resultsText }) } });
+            const searchResponse = await fetch(`${SEARCH_MEMORY_API_ENDPOINT}?query=${encodeURIComponent(searchQuery)}`);
+
+            let resultsForAI = "Errore durante la ricerca o nessun risultato.";
+            let displayResults = "Errore durante la ricerca.";
+
+            if (searchResponse.ok) {
+                // Tentiamo di parsare come JSON, ma pronti a gestire non-JSON
+                try {
+                    const searchData = await searchResponse.json();
+                    resultsForAI = searchData.results || "Nessun ricordo trovato per quei termini.";
+                    displayResults = resultsForAI;
+                    console.log("DEBUG (handleFnCall): Risultati da /api/searchMemory (JSON valido):", searchData);
+                } catch (parseError) {
+                    // Se il parsing JSON fallisce, leggi la risposta come testo
+                    console.warn("DEBUG (handleFnCall): Risposta da /api/searchMemory non era JSON valido. Leggo come testo. Errore:", parseError);
+                    const textResponse = await searchResponse.text(); // Leggi come testo
+                    resultsForAI = `Risposta testuale dal server (potrebbe essere un errore): ${textResponse.substring(0, 200)}`;
+                    displayResults = resultsForAI;
+                    console.log("DEBUG (handleFnCall): Risposta testuale da /api/searchMemory:", textResponse);
+                }
+            } else {
+                // Se la risposta non è ok (es. 404, 500)
+                let errorText = `Errore server ${searchResponse.status}`;
+                try {
+                    const errorData = await searchResponse.json();
+                    errorText = `Errore dal server di ricerca (${searchResponse.status}): ${errorData.error || "Dettagli non disponibili"}`;
+                } catch (e) {
+                    // Fallback se anche il parsing dell'errore JSON fallisce
+                    errorText = `Errore server ${searchResponse.status}: ${await searchResponse.text().catch(() => "Impossibile leggere dettagli errore")}`;
+                }
+                resultsForAI = errorText;
+                displayResults = resultsForAI;
+                console.error("DEBUG (handleFnCall): Errore da /api/searchMemory:", resultsForAI);
+            }
+
+            addTranscript("Sistema", `Risultati per "${searchQuery}": ${displayResults.substring(0, 200)}${displayResults.length > 200 ? "..." : ""}`, `search-res-${functionCall.call_id}`);
+            sendClientEvent({
+                type: "conversation.item.create",
+                item: {
+                    type: "function_call_output",
+                    call_id: functionCall.call_id,
+                    output: JSON.stringify({ results: resultsForAI })
+                }
+            });
             sendClientEvent({ type: "response.create" });
             if (statusDiv) statusDiv.textContent = "Aiko ha consultato la memoria.";
+
         } catch (e) {
-            console.error("DEBUG (handleFnCall) Errore:", e);
-            addTranscript("Sistema", `Errore ricerca (catch): ${e.message}`, `search-catch-${functionCall.call_id}`);
-            sendClientEvent({ type: "conversation.item.create", item: { type: "function_call_output", call_id: functionCall.call_id, output: JSON.stringify({ error: "Non sono riuscita a cercare." }) } });
+            console.error("DEBUG (handleFnCall) Errore nel blocco try-catch principale:", e);
+            addTranscript("Sistema", `Errore critico nello strumento di ricerca: ${e.message}`, `search-catch-${functionCall.call_id}`);
+            sendClientEvent({
+                type: "conversation.item.create",
+                item: {
+                    type: "function_call_output",
+                    call_id: functionCall.call_id,
+                    output: JSON.stringify({ error: "Non sono riuscita ad elaborare la richiesta di ricerca a causa di un errore tecnico." })
+                }
+            });
             sendClientEvent({ type: "response.create" });
         }
     }
@@ -270,13 +311,15 @@ function handleServerEvent(event) {
             if (event.item && event.item.role === "user" && event.item.type === "message") {
                 console.log(`DEBUG (handleServerEvent - USER MESSAGE CREATED): item_id='${event.item.id}'. Verifico contenuto... Item:`, JSON.parse(JSON.stringify(event.item)));
                 let userTranscript = null;
-                if (typeof event.item.content === 'string') {
+                if (typeof event.item.content === 'string') { // Caso 1: item.content è direttamente la stringa
                     userTranscript = event.item.content;
                 }
-                else if (event.item.content && Array.isArray(event.item.content) && event.item.content.length > 0 &&
-                    event.item.content[0].type === "input_audio" &&
-                    typeof event.item.content[0].transcript === 'string') {
-                    userTranscript = event.item.content[0].transcript;
+                else if (event.item.content && Array.isArray(event.item.content) && event.item.content.length > 0) { // Caso 2: item.content è un array
+                    if (typeof event.item.content[0] === 'string') { // Sotto-caso 2a: il primo elemento dell'array è la stringa
+                        userTranscript = event.item.content[0];
+                    } else if (event.item.content[0].type === "input_audio" && typeof event.item.content[0].transcript === 'string') { // Sotto-caso 2b: la struttura che abbiamo visto
+                        userTranscript = event.item.content[0].transcript;
+                    }
                 }
 
                 if (userTranscript && userTranscript.trim() !== '') {
@@ -290,16 +333,25 @@ function handleServerEvent(event) {
 
         case "conversation.item.updated":
             if (event.item && event.item.role === "user" && event.item.type === "message" &&
-                event.item.status === "completed" &&
-                event.item.content && Array.isArray(event.item.content) && event.item.content.length > 0 &&
-                event.item.content[0].type === "input_audio" &&
-                typeof event.item.content[0].transcript === 'string' && event.item.content[0].transcript.trim() !== '') {
+                event.item.status === "completed") {
+                console.log(`DEBUG (handleServerEvent - USER MESSAGE UPDATED): item_id='${event.item.id}'. Verifico contenuto... Item:`, JSON.parse(JSON.stringify(event.item)));
+                let userTranscriptUpdated = null;
+                if (typeof event.item.content === 'string') {
+                     userTranscriptUpdated = event.item.content;
+                } else if (event.item.content && Array.isArray(event.item.content) && event.item.content.length > 0) {
+                    if (typeof event.item.content[0] === 'string') {
+                        userTranscriptUpdated = event.item.content[0];
+                    } else if (event.item.content[0].type === "input_audio" && typeof event.item.content[0].transcript === 'string') {
+                        userTranscriptUpdated = event.item.content[0].transcript;
+                    }
+                }
 
-                const userTranscriptUpdated = event.item.content[0].transcript;
-                console.log(`DEBUG (handleServerEvent - USER MESSAGE UPDATED): TROVATA TRASCRIZIONE! Transcript='${userTranscriptUpdated}', item_id='${event.item.id}'`);
-                addTranscript("Tu", userTranscriptUpdated, event.item.id);
-            } else if (event.item && event.item.role === "user" && event.item.type === "message") {
-                 console.warn(`DEBUG (handleServerEvent - USER MESSAGE UPDATED): Item utente aggiornato, ma formato trascrizione non trovato o trascrizione vuota. Item:`, JSON.parse(JSON.stringify(event.item)));
+                if (userTranscriptUpdated && userTranscriptUpdated.trim() !== '') {
+                    console.log(`DEBUG (handleServerEvent - USER MESSAGE UPDATED): TROVATA TRASCRIZIONE! Transcript='${userTranscriptUpdated}'`);
+                    addTranscript("Tu", userTranscriptUpdated, event.item.id);
+                } else {
+                    console.warn(`DEBUG (handleServerEvent - USER MESSAGE UPDATED): Item utente aggiornato, ma trascrizione non trovata o vuota. Item content:`, event.item.content);
+                }
             }
             break;
 
