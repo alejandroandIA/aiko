@@ -1,12 +1,7 @@
 // api/transcribeAudio.js
-// Assicurati che Vercel possa gestire l'upload di blob/file o stream audio.
-// Per semplicità, questo esempio assume che il client invii l'audio come FormData
-// o che possiamo gestire un blob audio direttamente se la versione Node di Vercel lo supporta con fetch.
-// L'uso di FormData è più standard per inviare file/blob a un endpoint.
-// Sarà necessario installare 'form-data' se il client invia FormData: npm install form-data
-
-// import FormData from 'form-data'; // Decommenta se il client invia FormData e Node < 18 non ha FormData globale
-// import fetch from 'node-fetch'; // Decommenta se Node < 18
+import FormData from 'form-data'; // Importa esplicitamente
+// Non serve 'node-fetch' se l'ambiente Node di Vercel è >= 16.15 (per fetch globale) o >=18 (per FormData globale)
+// Ma usare form-data esplicito è più sicuro per la parte multipart.
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -21,30 +16,28 @@ export default async function handler(req, res) {
     }
 
     try {
-        // Il client invierà l'audio come blob nel corpo della richiesta.
-        // Dobbiamo ricostruire un FormData o inviare il blob direttamente.
-        // OpenAI Whisper API si aspetta multipart/form-data.
-        const audioBlobBuffer = await req.buffer(); // Vercel helper per ottenere il buffer del body
+        const audioBlobBuffer = await req.buffer(); 
         
         if (!audioBlobBuffer || audioBlobBuffer.length === 0) {
             return res.status(400).json({ error: "Nessun dato audio ricevuto." });
         }
 
         const formData = new FormData();
-        // OpenAI si aspetta un file. Dobbiamo dargli un nome, anche se fittizio.
-        // Il tipo MIME corretto è importante. WebM è un formato comune.
-        formData.append('file', new Blob([audioBlobBuffer]), { filename: 'audio.webm', contentType: 'audio/webm' });
+        // Quando si usa il pacchetto 'form-data', si passa il buffer direttamente.
+        // Il terzo argomento (nome file) è importante per Whisper.
+        formData.append('file', audioBlobBuffer, { filename: 'audio.webm', contentType: 'audio/webm' });
         formData.append('model', 'whisper-1');
-        formData.append('language', 'it'); // Specifica la lingua per una migliore accuratezza
-        // formData.append('response_format', 'text'); // Per avere solo il testo semplice
+        formData.append('language', 'it');
+        // formData.append('response_format', 'text'); // Whisper restituisce JSON di default, che contiene 'text'
 
         const whisperResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
             method: "POST",
             headers: {
                 "Authorization": `Bearer ${OPENAI_API_KEY}`,
-                // 'Content-Type' sarà impostato automaticamente da fetch quando usi FormData
+                // 'Content-Type' viene impostato da FormData con il boundary corretto
+                ...formData.getHeaders() // Importante quando si usa il pacchetto 'form-data' con fetch
             },
-            body: formData,
+            body: formData, // formData qui è un'istanza del pacchetto 'form-data'
         });
 
         if (!whisperResponse.ok) {
@@ -55,7 +48,7 @@ export default async function handler(req, res) {
 
         const transcriptionData = await whisperResponse.json();
         
-        res.setHeader('Access-Control-Allow-Origin', '*'); // Per sviluppo
+        res.setHeader('Access-Control-Allow-Origin', '*');
         return res.status(200).json({ transcript: transcriptionData.text });
 
     } catch (error) {
