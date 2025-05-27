@@ -13,8 +13,9 @@ const SUMMARY_API_ENDPOINT = "/api/generateContextSummary";
 
 let pc;
 let dc;
-let ephemeralKeyGlobal;
+let ephemeralKeyGlobal; // Dichiarata globalmente
 let currentOpenAISessionId = null;
+let localStream = null; // Inizializzata a null e dichiarata globalmente
 
 let currentConversationHistory = [];
 let currentTurnUserTranscript = "";
@@ -60,10 +61,19 @@ async function getEphemeralTokenAndSessionId(contextSummary) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contextSummary: contextSummary })
         });
-        if (!response.ok) { const err = await response.json(); throw new Error(err.error || 'Errore backend token');}
+        if (!response.ok) {
+            let errorMsg = 'Errore backend token';
+            try {
+                const err = await response.json();
+                errorMsg = err.error || `Errore ${response.status}`;
+            } catch (e) {
+                errorMsg = `Errore ${response.status}: ${await response.text().substring(0,100)}`;
+            }
+            throw new Error(errorMsg);
+        }
         const data = await response.json();
         if (!data.client_secret) throw new Error('Token non ricevuto.');
-        ephemeralKeyGlobal = data.client_secret;
+        // ephemeralKeyGlobal sarà assegnato in startConversation
         return data.client_secret;
     } catch (error) {
         console.error("Errore recupero token:", error);
@@ -79,12 +89,17 @@ async function startConversation() {
     currentConversationHistory = [];
     currentTurnUserTranscript = "";
     currentOpenAISessionId = null;
+    localStream = null; // Resetta localStream all'inizio di una nuova conversazione
     console.log("DEBUG: Nuova conversazione.");
 
     try {
         const summary = await getContextSummary();
-        const token = await getEphemeralTokenAndSessionId(summary);
-        if (!token) { stopConversation(); return; }
+        ephemeralKeyGlobal = await getEphemeralTokenAndSessionId(summary);
+        if (!ephemeralKeyGlobal) {
+            console.error("Fallimento ottenimento token effimero.");
+            stopConversation();
+            return;
+        }
 
         pc = new RTCPeerConnection();
         pc.ontrack = (event) => {
@@ -94,9 +109,16 @@ async function startConversation() {
             }
         };
 
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-        if (statusDiv) statusDiv.textContent = "Microfono attivo.";
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true }); // Assegnazione a localStream globale
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            if (statusDiv) statusDiv.textContent = "Microfono attivo.";
+        } catch (getUserMediaError) {
+            console.error("Errore accesso al microfono:", getUserMediaError);
+            if (statusDiv) statusDiv.textContent = "Errore microfono. Controlla i permessi.";
+            stopConversation();
+            return;
+        }
 
         dc = pc.createDataChannel("oai-events", { ordered: true });
         dc.onopen = () => {
@@ -169,8 +191,10 @@ async function saveCurrentSessionHistoryAndStop() {
 
 function stopConversation() {
     console.log("DEBUG (stop): Chiamata.");
-    if (localStream) localStream.getTracks().forEach(track => track.stop());
-    localStream = null;
+    if (localStream) { // Verifica se localStream è definito prima di usarlo
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+    }
     if (dc && dc.readyState !== "closed") dc.close();
     dc = null;
     if (pc && pc.connectionState !== "closed") pc.close();
@@ -274,7 +298,7 @@ async function handleFunctionCall(functionCall) {
 }
 
 async function sendMemoryContextToAIForNextTurn(instructionsContent) {
-    if (!currentOpenAISessionId || !ephemeralKeyGlobal) { // Usa ephemeralKeyGlobal
+    if (!currentOpenAISessionId || !ephemeralKeyGlobal) {
         console.warn("DEBUG: ID sessione OpenAI o token non disponibili per inviare contesto memoria.");
         return;
     }
@@ -334,8 +358,7 @@ function handleServerEvent(event) {
             } else {
                 console.warn(`DEBUG (INPUT_AUDIO_TRANSCRIPTION.COMPLETED): Transcript non valido o vuoto.`);
             }
-            // Non chiamiamo addTranscript o sendMemoryContextToAIForNextTurn qui,
-            // lo faremo in input_audio_buffer.speech_stopped
+            // L'aggiunta e l'invio del contesto avverranno in speech_stopped
             break;
 
         case "input_audio_buffer.speech_stopped":
@@ -345,14 +368,9 @@ function handleServerEvent(event) {
                 addTranscript("Tu", currentTurnUserTranscript, `user-turn-${Date.now()}`);
                 fetchRecentMemoryForContext(7).then(recentMemory => {
                     sendMemoryContextToAIForNextTurn(recentMemory);
-                    // Non è necessario inviare response.create se create_response in turn_detection è true
-                    // e la sessione è stata aggiornata con le nuove istruzioni.
                 });
             } else {
                 console.log("DEBUG (speech_stopped): Nessuna trascrizione utente valida per questo turno.");
-                // Se non c'è trascrizione utente, l'IA potrebbe comunque rispondere (es. se c'è silenzio)
-                // o potremmo dover forzare una risposta vuota se create_response non scatta.
-                // Per ora, lasciamo che turn_detection gestisca questo.
             }
             currentTurnUserTranscript = ""; // Resetta per il prossimo turno
             break;
