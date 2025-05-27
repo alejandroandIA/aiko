@@ -95,10 +95,15 @@ async function startConversation() {
                     tools: [{
                         type: "function",
                         name: "cerca_nella_mia_memoria_personale",
-                        description: "Cerca nelle conversazioni passate con Alejandro per trovare informazioni specifiche, dettagli personali, preferenze o rispondere a domande su eventi precedenti che lo riguardano.",
+                        description: `Cerca nelle conversazioni passate con Alejandro per trovare informazioni specifiche, dettagli personali, preferenze o rispondere a domande su eventi precedenti che lo riguardano. Se ti chiede dell'ultima conversazione o di cosa parlavate, prova a usare come termini di ricerca parole chiave significative delle sue ultime affermazioni (se le hai dal riassunto del contesto) o temi generali recenti.`,
                         parameters: {
                             type: "object",
-                            properties: { termini_di_ricerca: { type: "string", description: "Parole chiave o domanda specifica da cercare nella cronologia passata con Alejandro." } },
+                            properties: {
+                                termini_di_ricerca: {
+                                    type: "string",
+                                    description: `Termini di ricerca specifici e concisi (2-4 parole chiave) per trovare informazioni nella memoria. Se Alejandro chiede un riepilogo generale o dell'ultima conversazione, identifica i concetti chiave più recenti o specifici di cui potresti aver bisogno.`
+                                }
+                            },
                             required: ["termini_di_ricerca"]
                         }
                     }]
@@ -265,11 +270,9 @@ function handleServerEvent(event) {
             if (event.item && event.item.role === "user" && event.item.type === "message") {
                 console.log(`DEBUG (handleServerEvent - USER MESSAGE CREATED): item_id='${event.item.id}'. Verifico contenuto... Item:`, JSON.parse(JSON.stringify(event.item)));
                 let userTranscript = null;
-                // Tentativo 1: Direttamente in item.content (se è una stringa)
                 if (typeof event.item.content === 'string') {
                     userTranscript = event.item.content;
                 }
-                // Tentativo 2: Dentro item.content[0].transcript (se è un array)
                 else if (event.item.content && Array.isArray(event.item.content) && event.item.content.length > 0 &&
                     event.item.content[0].type === "input_audio" &&
                     typeof event.item.content[0].transcript === 'string') {
@@ -300,7 +303,7 @@ function handleServerEvent(event) {
             }
             break;
 
-        case "conversation.item.input_audio_transcription.completed": // Fallback, meno probabile per trascrizione finale utente
+        case "conversation.item.input_audio_transcription.completed":
             console.log(`DEBUG (handleServerEvent - INPUT_AUDIO_TRANSCRIPTION.COMPLETED - Fallback): Transcript='${event.transcript}'`);
             if (event.transcript && typeof event.transcript === 'string' && event.transcript.trim() !== '') {
                 addTranscript("Tu", event.transcript, event.item_id);
