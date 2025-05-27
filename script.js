@@ -1,4 +1,4 @@
-// script.js (COMPLETO E AGGIORNATO)
+// script.js
 const startButton = document.getElementById('startButton');
 const stopButton = document.getElementById('stopButton');
 const statusDiv = document.getElementById('status');
@@ -21,27 +21,6 @@ let mediaRecorder;
 let audioChunks = [];
 
 let currentConversationHistory = [];
-
-async function fetchRecentMemoryForContext(limit = 7) {
-    console.log(`DEBUG: Fetching last ${limit} memory entries for continuous context...`);
-    if (statusDiv) statusDiv.textContent = "Aiko consulta la memoria recente...";
-    try {
-        const response = await fetch(`${SEARCH_MEMORY_API_ENDPOINT}?fetchLast=${limit}`);
-        if (response.ok) {
-            const data = await response.json();
-            console.log("DEBUG: Memoria recente per contesto ricevuta:", data.results || "(vuota)");
-            if (statusDiv) statusDiv.textContent = "Memoria recente recuperata.";
-            return data.results || "";
-        }
-        console.warn("DEBUG: Impossibile fetchare memoria recente. Status:", response.status);
-        if (statusDiv) statusDiv.textContent = "Errore consultazione memoria recente.";
-        return "";
-    } catch (error) {
-        console.error("DEBUG: Errore fetch memoria recente:", error);
-        if (statusDiv) statusDiv.textContent = "Errore grave consultazione memoria.";
-        return "";
-    }
-}
 
 async function getContextSummary() {
     if (statusDiv) statusDiv.textContent = "Analizzo contesto generale...";
@@ -91,7 +70,7 @@ async function transcribeUserAudio(audioBlob) {
     try {
         const response = await fetch(TRANSCRIBE_API_ENDPOINT, {
             method: 'POST',
-            headers: { 'Content-Type': audioBlob.type || 'audio/webm' }, // Invia il tipo MIME corretto
+            headers: { 'Content-Type': audioBlob.type || 'audio/webm' },
             body: audioBlob
         });
 
@@ -130,7 +109,7 @@ async function startConversation() {
 
     try {
         const summary = await getContextSummary();
-        const token = await getEphemeralTokenAndSessionId(summary); // ephemeralKeyGlobal è settato dentro questa funzione
+        const token = await getEphemeralTokenAndSessionId(summary);
         if (!token) { stopConversation(); return; }
 
         try {
@@ -138,11 +117,11 @@ async function startConversation() {
             if (statusDiv) statusDiv.textContent = "Microfono attivo.";
 
             const options = { mimeType: 'audio/webm;codecs=opus' };
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                console.warn(`${options.mimeType} non supportato, provo con default per MediaRecorder.`);
-                mediaRecorder = new MediaRecorder(localStream);
-            } else {
+            if (MediaRecorder.isTypeSupported(options.mimeType)) {
                 mediaRecorder = new MediaRecorder(localStream, options);
+            } else {
+                console.warn(`${options.mimeType} non supportato, provo con default per MediaRecorder.`);
+                mediaRecorder = new MediaRecorder(localStream); // Fallback al default del browser
             }
 
             mediaRecorder.ondataavailable = (event) => {
@@ -157,11 +136,12 @@ async function startConversation() {
                     const userTranscript = await transcribeUserAudio(audioBlob);
                     if (userTranscript && userTranscript.trim() !== '') {
                         addTranscript("Tu", userTranscript, `user-turn-${Date.now()}`);
-                        // Ora che la trascrizione utente è salvata, l'IA la troverà con la ricerca
-                        // o sarà nel prossimo riassunto. La risposta dell'IA è già triggerata
-                        // da create_response:true nell'API Realtime.
+                        // L'IA risponderà all'audio che ha "sentito" tramite Realtime API.
+                        // La trascrizione utente è ora in history per il salvataggio e future ricerche.
                     } else {
                         console.log("DEBUG: Trascrizione da Whisper vuota o fallita.");
+                        // Anche se la trascrizione Whisper fallisce, l'IA Realtime potrebbe aver sentito qualcosa.
+                        // Non inviamo un messaggio vuoto "Tu".
                     }
                 }
             };
@@ -190,10 +170,10 @@ async function startConversation() {
                     tools: [{
                         type: "function",
                         name: "cerca_nella_mia_memoria_personale",
-                        description: `Cerca nelle conversazioni passate con Alejandro per trovare informazioni specifiche.`,
+                        description: `Cerca nelle conversazioni passate con Alejandro per trovare informazioni specifiche, dettagli personali, preferenze o rispondere a domande su eventi precedenti che lo riguardano. Se ti chiede dell'ultima conversazione o di cosa parlavate, prova a usare come termini di ricerca parole chiave significative delle sue ultime affermazioni o temi generali recenti.`,
                         parameters: {
                             type: "object",
-                            properties: { termini_di_ricerca: { type: "string", description: `Termini di ricerca specifici.` } },
+                            properties: { termini_di_ricerca: { type: "string", description: `Termini di ricerca specifici e concisi (2-4 parole chiave) per trovare informazioni nella memoria. Se Alejandro chiede un riepilogo generale o dell'ultima conversazione, identifica i concetti chiave più recenti o specifici di cui potresti aver bisogno.` } },
                             required: ["termini_di_ricerca"]
                         }
                     }]
@@ -207,12 +187,12 @@ async function startConversation() {
                     eventData = JSON.parse(event.data);
                     handleServerEvent(eventData);
                 } else {
-                    console.warn("dc.onmessage: event.data non è una stringa. Dati ricevuti:", event.data);
+                    console.warn("dc.onmessage: event.data non è una stringa:", event.data);
                 }
             } catch (e) {
                 console.error("Errore durante il parsing del JSON da event.data o nell'esecuzione di handleServerEvent:", e);
-                console.error("Dati grezzi che hanno causato l'errore (se event.data era una stringa):", typeof event.data === 'string' ? event.data : "event.data non era una stringa");
-                if (statusDiv) statusDiv.textContent = "Errore: Messaggio dal server non valido.";
+                console.error("Dati grezzi (se stringa):", typeof event.data === 'string' ? event.data : "event.data non era stringa");
+                if (statusDiv) statusDiv.textContent = "Errore: Messaggio server non valido.";
             }
         };
         dc.onclose = () => console.log("DEBUG: Data channel chiuso.");
@@ -281,7 +261,7 @@ function stopConversation() {
     stopButton.disabled = true;
     if (statusDiv) statusDiv.textContent = "Pronto per una nuova conversazione!";
     if (aiAudioPlayer) aiAudioPlayer.srcObject = null;
-    currentAIResponseId = null;
+    // currentAIResponseId non è più usato in questo modo, può essere rimosso se non serve altrove
     currentOpenAISessionId = null;
     audioChunks = [];
 }
@@ -301,7 +281,7 @@ function addTranscript(speaker, textContent, itemId) {
     div.innerHTML = `<strong>${speaker === 'Tu' ? 'Alejandro' : speaker}:</strong> ${textContent}`;
     transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight;
 
-    if ((speaker === "Tu" || speaker === "AI") && typeof textContent === 'string' && textContent.trim() !== '') {
+    if ((speaker === "Tu" || speaker === "AI" || speaker === "Sistema") && typeof textContent === 'string' && textContent.trim() !== '') {
         console.log(`DEBUG (addTranscript): AGGIUNGO A HISTORY: ${speaker}, "${textContent.substring(0,50)}..."`);
         currentConversationHistory.push({ speaker, content: textContent });
     } else {
@@ -310,14 +290,14 @@ function addTranscript(speaker, textContent, itemId) {
 }
 
 function appendToTranscript(speaker, textDelta, itemId) {
-    const id = `${speaker}-${itemId || currentAIResponseId || 'ai-stream'}`;
+    const id = `${speaker}-${itemId || 'ai-stream-fallback'}`;
     let div = document.getElementById(id);
     let isNew = false;
     if (!div) {
         div = document.createElement('div');
         div.id = id;
         div.className = speaker.toLowerCase();
-        div.innerHTML = `<strong>${speaker === 'Tu' ? 'Alejandro' : speaker}:</strong> `;
+        div.innerHTML = `<strong>AI:</strong> `; // Assumiamo sia sempre AI qui
         transcriptsDiv.appendChild(div);
         isNew = true;
     }
@@ -382,12 +362,10 @@ function handleServerEvent(event) {
     switch (event.type) {
         case "session.created":
             currentOpenAISessionId = event.session.id;
-            console.log("DEBUG: Sessione OpenAI creata, ID:", currentOpenAISessionId);
             if (statusDiv) statusDiv.textContent = `Aiko è pronta!`;
             break;
-        case "session.updated":
-            console.log("DEBUG: Sessione OpenAI aggiornata.");
-            break;
+        case "session.updated": break;
+
         case "input_audio_buffer.speech_started":
             if (statusDiv) statusDiv.textContent = "Ti ascolto...";
             if (mediaRecorder && mediaRecorder.state === "inactive") {
@@ -396,17 +374,16 @@ function handleServerEvent(event) {
                 console.log("DEBUG: MediaRecorder avviato.");
             }
             break;
+
         case "input_audio_buffer.speech_stopped":
             if (statusDiv) statusDiv.textContent = "Elaboro il tuo audio...";
             if (mediaRecorder && mediaRecorder.state === "recording") {
                 mediaRecorder.stop(); // Questo triggererà ondataavailable e onstop (che chiama transcribeUserAudio)
                 console.log("DEBUG: MediaRecorder fermato. Attendo trascrizione da Whisper...");
             }
-            // L'IA Realtime risponderà all'audio che ha "sentito".
-            // La trascrizione da Whisper verrà aggiunta alla history separatamente quando pronta.
             break;
 
-        // Non ci affidiamo più a questi per la trascrizione utente primaria
+        // Gli eventi di trascrizione diretta da OpenAI Realtime per l'utente non vengono più usati per addTranscript
         case "conversation.item.input_audio_transcription.delta":
         case "conversation.item.input_audio_transcription.completed":
         case "conversation.item.created":
@@ -417,12 +394,12 @@ function handleServerEvent(event) {
             break;
 
         case "response.created":
-            currentAIResponseId = event.response.id;
+            // currentAIResponseId = event.response.id; // Non più necessario se appendToTranscript usa response_id
             if (statusDiv) statusDiv.textContent = "Aiko sta pensando...";
             break;
         case "response.audio_transcript.delta": // Per l'IA
             if (typeof event.delta === 'string') {
-                appendToTranscript("AI", event.delta, event.response_id || currentAIResponseId);
+                appendToTranscript("AI", event.delta, event.response_id); // Passa sempre response_id
             }
             if (statusDiv) statusDiv.textContent = "Aiko risponde...";
             break;
@@ -432,7 +409,6 @@ function handleServerEvent(event) {
             } else {
                 if (statusDiv) statusDiv.textContent = "Aiko ha finito di parlare.";
             }
-            currentAIResponseId = null;
             break;
         case "error":
             console.error("Errore OpenAI:", event);
