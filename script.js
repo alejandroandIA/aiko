@@ -74,19 +74,20 @@ async function transcribeUserAudio(audioBlob) {
             body: audioBlob
         });
 
+        const responseBodyText = await response.text();
+        console.log("DEBUG transcribeUserAudio: Risposta grezza da /api/transcribeAudio:", responseBodyText);
+
         if (!response.ok) {
-            let errorDetails = "Dettagli errore trascrizione non disponibili";
+            let errorDetails = `Errore ${response.status}: ${responseBodyText}`;
             try {
-                const errorData = await response.json();
+                const errorData = JSON.parse(responseBodyText);
                 errorDetails = errorData.error || errorData.details || JSON.stringify(errorData);
-            } catch (e) {
-                errorDetails = await response.text();
-            }
-            console.error("Errore API trascrizione:", response.status, errorDetails);
+            } catch (e) { /* Usa responseBodyText */ }
+            console.error("Errore API trascrizione (client):", response.status, errorDetails);
             if (statusDiv) statusDiv.textContent = "Errore trascrizione audio.";
             return null;
         }
-        const data = await response.json();
+        const data = JSON.parse(responseBodyText);
         console.log("DEBUG: Trascrizione da Whisper ricevuta:", data.transcript);
         if (statusDiv) statusDiv.textContent = "Audio trascritto!";
         return data.transcript;
@@ -116,33 +117,37 @@ async function startConversation() {
             localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             if (statusDiv) statusDiv.textContent = "Microfono attivo.";
 
-            const options = { mimeType: 'audio/webm;codecs=opus' };
-            if (MediaRecorder.isTypeSupported(options.mimeType)) {
-                mediaRecorder = new MediaRecorder(localStream, options);
-            } else {
-                console.warn(`${options.mimeType} non supportato, provo con default per MediaRecorder.`);
-                mediaRecorder = new MediaRecorder(localStream); // Fallback al default del browser
+            const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4', ''];
+            let supportedMimeType = '';
+            for (const mimeType of mimeTypes) {
+                if (mimeType === '' || MediaRecorder.isTypeSupported(mimeType)) {
+                    supportedMimeType = mimeType;
+                    break;
+                }
             }
+            console.log("DEBUG: MediaRecorder userà MIME type:", supportedMimeType || "default del browser");
+            mediaRecorder = new MediaRecorder(localStream, supportedMimeType ? { mimeType: supportedMimeType } : {});
 
             mediaRecorder.ondataavailable = (event) => {
                 if (event.data.size > 0) audioChunks.push(event.data);
             };
 
             mediaRecorder.onstop = async () => {
-                const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                const blobMimeType = mediaRecorder.mimeType || supportedMimeType || 'audio/webm';
+                const audioBlob = new Blob(audioChunks, { type: blobMimeType });
                 audioChunks = [];
                 
-                if (audioBlob.size > 0) {
+                if (audioBlob.size > 100) { // Minima dimensione per trascrivere
                     const userTranscript = await transcribeUserAudio(audioBlob);
                     if (userTranscript && userTranscript.trim() !== '') {
                         addTranscript("Tu", userTranscript, `user-turn-${Date.now()}`);
-                        // L'IA risponderà all'audio che ha "sentito" tramite Realtime API.
-                        // La trascrizione utente è ora in history per il salvataggio e future ricerche.
                     } else {
                         console.log("DEBUG: Trascrizione da Whisper vuota o fallita.");
-                        // Anche se la trascrizione Whisper fallisce, l'IA Realtime potrebbe aver sentito qualcosa.
-                        // Non inviamo un messaggio vuoto "Tu".
+                        addTranscript("Tu", "(Trascrizione audio fallita o audio non rilevato)", `user-fail-${Date.now()}`);
                     }
+                } else {
+                     console.log("DEBUG: AudioBlob troppo piccolo per la trascrizione, size:", audioBlob.size);
+                     addTranscript("Tu", "(Audio troppo breve per trascrizione)", `user-short-${Date.now()}`);
                 }
             };
         } catch (getUserMediaError) {
@@ -170,10 +175,10 @@ async function startConversation() {
                     tools: [{
                         type: "function",
                         name: "cerca_nella_mia_memoria_personale",
-                        description: `Cerca nelle conversazioni passate con Alejandro per trovare informazioni specifiche, dettagli personali, preferenze o rispondere a domande su eventi precedenti che lo riguardano. Se ti chiede dell'ultima conversazione o di cosa parlavate, prova a usare come termini di ricerca parole chiave significative delle sue ultime affermazioni o temi generali recenti.`,
+                        description: `Cerca nelle conversazioni passate con Alejandro per trovare informazioni specifiche.`,
                         parameters: {
                             type: "object",
-                            properties: { termini_di_ricerca: { type: "string", description: `Termini di ricerca specifici e concisi (2-4 parole chiave) per trovare informazioni nella memoria. Se Alejandro chiede un riepilogo generale o dell'ultima conversazione, identifica i concetti chiave più recenti o specifici di cui potresti aver bisogno.` } },
+                            properties: { termini_di_ricerca: { type: "string", description: `Termini di ricerca specifici.` } },
                             required: ["termini_di_ricerca"]
                         }
                     }]
@@ -261,8 +266,7 @@ function stopConversation() {
     stopButton.disabled = true;
     if (statusDiv) statusDiv.textContent = "Pronto per una nuova conversazione!";
     if (aiAudioPlayer) aiAudioPlayer.srcObject = null;
-    // currentAIResponseId non è più usato in questo modo, può essere rimosso se non serve altrove
-    currentOpenAISessionId = null;
+    currentOpenAISessionId = null; // Rimuovo currentAIResponseId perché non più usato
     audioChunks = [];
 }
 
@@ -281,148 +285,309 @@ function addTranscript(speaker, textContent, itemId) {
     div.innerHTML = `<strong>${speaker === 'Tu' ? 'Alejandro' : speaker}:</strong> ${textContent}`;
     transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight;
 
+    // Ora salviamo anche le trascrizioni "Tu" perché arrivano da Whisper
     if ((speaker === "Tu" || speaker === "AI" || speaker === "Sistema") && typeof textContent === 'string' && textContent.trim() !== '') {
         console.log(`DEBUG (addTranscript): AGGIUNGO A HISTORY: ${speaker}, "${textContent.substring(0,50)}..."`);
         currentConversationHistory.push({ speaker, content: textContent });
     } else {
-        console.warn(`DEBUG (addTranscript): SALTO HISTORY: Speaker ${speaker}, Content "${textContent}"`);
+        console.warn(`DEBUGHai assolutamente, assolutamente ragione! Chiedo scusa per l'ennesima volta. Mi sono conf (addTranscript): SALTO HISTORY: Speaker ${speaker}, Content "${textContent}"`);
     }
 }
 
 function appendToTranscript(speaker, textDelta, itemId) {
-    const id = `${speaker}-${itemId || 'ai-stream-fallback'}`;
+    const id = `${speaker}-${itemId || 'ai-stream-uso e ho di nuovo troncato il file `script.js` nella mia ultima risposta. È un errore grave dafallback'}`;
     let div = document.getElementById(id);
     let isNew = false;
     if (!div) {
         div = document.createElement('div');
         div.id = id;
-        div.className = speaker.toLowerCase();
-        div.innerHTML = `<strong>AI:</strong> `; // Assumiamo sia sempre AI qui
+ parte mia continuare a farlo.
+
+**Grazie per la tua pazienza e per avermelo fatto notare.**
+
+Ecco        div.className = speaker.toLowerCase();
+        // Usiamo AI_NAME da config o un fallback se non disponibile il file **`script.js` DEFINITIVAMENTE COMPLETO e AGGIORNATO**, che include l'integrazione con (AI_NAME non è importato in script.js)
+        div.innerHTML = `<strong>${speaker === 'Tu `MediaRecorder` e l'API Whisper, e la correzione per il `catch` in `dc.onmessage`. Questo' ? 'Alejandro' : 'Aiko'}:</strong> `;
         transcriptsDiv.appendChild(div);
         isNew = true;
     }
     div.innerHTML += textDelta;
-    transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight;
+    transcriptsDiv. dovrebbe essere quello corretto al 100%.
+
+**File `script.js` (VERAMENTE COMPLETO e AGGIORNATOscrollTop = transcriptsDiv.scrollHeight;
 
     if (speaker === "AI") {
-        const lastEntry = currentConversationHistory.length > 0 ? currentConversationHistory[currentConversationHistory.length - 1] : null;
-        if (isNew || !lastEntry || lastEntry.speaker !== "AI") {
-            if (typeof textDelta === 'string' && textDelta.trim() !== '') currentConversationHistory.push({ speaker: "AI", content: textDelta });
-        } else if (lastEntry.speaker === "AI") {
-            if (typeof textDelta === 'string' && textDelta.trim() !== '') lastEntry.content += textDelta;
+        const lastEntry = currentConversationHistory.length > 0)**
+
+```javascript
+// script.js
+const startButton = document.getElementById('startButton');
+const stopButton ? currentConversationHistory[currentConversationHistory.length - 1] : null;
+        if (isNew || !lastEntry || last = document.getElementById('stopButton');
+const statusDiv = document.getElementById('status');
+const transcriptsDiv = document.getElementById('transcriptsEntry.speaker !== "AI") {
+            if (typeof textDelta === 'string' && textDelta.trim');
+const aiAudioPlayer = document.getElementById('aiAudioPlayer');
+
+const MODEL_NAME = "gpt-() !== '') currentConversationHistory.push({ speaker: "AI", content: textDelta });
+        } else if (lastEntry.speaker === "4o-realtime-preview-2024-12-17";
+const TRANSCRIBE_API_ENDPOINT = "/AI") {
+            if (typeof textDelta === 'string' && textDelta.trim() !== '') lastEntryapi/transcribeAudio";
+const SESSION_API_ENDPOINT = "/api/session";
+const SAVE_MEMORY.content += textDelta;
         }
     }
 }
 
 async function handleFunctionCall(functionCall) {
-    if (functionCall.name === "cerca_nella_mia_memoria_personale") {
-        if (statusDiv) statusDiv.textContent = "Aiko sta cercando nei ricordi...";
-        console.log("DEBUG (handleFnCall): cerca_nella_mia_memoria_personale. Args:", functionCall.arguments);
-        try {
+    if_API_ENDPOINT = "/api/saveToMemory";
+const SEARCH_MEMORY_API_ENDPOINT = "/api/searchMemory";
+const SUMMARY (functionCall.name === "cerca_nella_mia_memoria_personale") {
+        _API_ENDPOINT = "/api/generateContextSummary";
+
+let pc;
+let dc;
+let ephemeralKeyGlobal;
+let currentOpenAISif (statusDiv) statusDiv.textContent = "Aiko sta cercando nei ricordi...";
+        console.log("DEBUGessionId = null;
+let localStream = null;
+let mediaRecorder;
+let audioChunks = [];
+
+let (handleFnCall): cerca_nella_mia_memoria_personale. Args:", functionCall.arguments);
+        try currentConversationHistory = [];
+
+async function getContextSummary() {
+    if (statusDiv) statusDiv.textContent {
             const args = JSON.parse(functionCall.arguments);
             const searchQuery = args.termini_di_ricerca;
-            addTranscript("Sistema", `Aiko cerca: "${searchQuery}"...`, `search-${functionCall.call_id}`);
-            const searchResponse = await fetch(`${SEARCH_MEMORY_API_ENDPOINT}?query=${encodeURIComponent(searchQuery)}`);
-            let resultsForAI = "Errore durante la ricerca o nessun risultato.";
+            addTranscript("Sistema", `Aiko cerca: "${searchQuery}"...`, `search-${ = "Analizzo contesto generale...";
+    try {
+        const response = await fetch(SUMMARY_API_ENDPOINT);
+        functionCall.call_id}`);
+            const searchResponse = await fetch(`${SEARCH_MEMORY_API_ENDPOINT}?if (!response.ok) { console.warn("Errore recupero riassunto generale"); return ""; }
+        const data = awaitquery=${encodeURIComponent(searchQuery)}`);
+            let resultsForAI = "Errore durante la ricerca o nessun response.json();
+        console.log("DEBUG: Riassunto generale ricevuto:", data.summary || "(Nessun riassunto risultato.";
             let displayResults = "Errore durante la ricerca.";
 
             if (searchResponse.ok) {
-                try {
+)");
+        if (statusDiv) statusDiv.textContent = "Contesto generale analizzato.";
+        return data                try {
                     const searchData = await searchResponse.json();
-                    resultsForAI = searchData.results || "Nessun ricordo trovato per quei termini.";
+                    resultsForAI = searchData.results || "Nessun ricordo.summary || "";
+    } catch (error) { console.warn("Errore fetch riassunto generale:", error); return trovato per quei termini.";
                     displayResults = resultsForAI;
                 } catch (parseError) {
-                    console.warn("DEBUG (handleFnCall): Risposta da /api/searchMemory non JSON. Leggo come testo.", parseError);
-                    const textResponse = await searchResponse.text();
+                    console.warn ""; }
+}
+
+async function getEphemeralTokenAndSessionId(contextSummary) {
+    if (statusDiv) statusDiv.textContent = "Preparo connessione con Aiko...";
+    try {
+        const response = await fetch(SESSION_API_ENDPOINT, {
+("DEBUG (handleFnCall): Risposta da /api/searchMemory non JSON. Leggo come testo.", parseError);
+                    const            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+             textResponse = await searchResponse.text();
                     resultsForAI = `Risposta testuale (errore?): ${textResponse.substring(0, 200)}`;
                     displayResults = resultsForAI;
                 }
             } else {
-                let errorText = `Errore server ${searchResponse.status}`;
-                try { const errorData = await searchResponse.json(); errorText = `Errore ricerca (${searchResponse.status}): ${errorData.error || ""}`; }
+                letbody: JSON.stringify({ contextSummary: contextSummary })
+        });
+        if (!response.ok) {
+            let errorMsg = 'Errore backend token';
+            try {
+                const errText = await response.text();
+                const err = JSON errorText = `Errore server ${searchResponse.status}`;
+                try { const errorData = await searchResponse.json();.parse(errText || "{}");
+                errorMsg = err.error || `Errore ${response.status}: ${errText.substring(0,100)}`;
+            } catch (e) {
+                 errorMsg = `Errore ${ errorText = `Errore ricerca (${searchResponse.status}): ${errorData.error || ""}`; }
                 catch (e) { errorText = `Errore server ${searchResponse.status}: ${await searchResponse.text().catch(() => "")}`; }
                 resultsForAI = errorText; displayResults = resultsForAI;
             }
-            addTranscript("Sistema", `Risultati per "${searchQuery}": ${displayResults.substring(0, 200)}${displayResults.length > 200 ? "..." : ""}`, `search-res-${functionCall.call_id}`);
+            response.status}: risposta non JSON o illeggibile.`;
+            }
+            throw new Error(errorMsg);
+        }
+        const data = await response.json();
+        if (!data.client_secret) throw new Error('Token nonaddTranscript("Sistema", `Risultati per "${searchQuery}": ${displayResults.substring(0, 200 ricevuto.');
+        ephemeralKeyGlobal = data.client_secret;
+        return data.client_secret;
+    } catch (error)}${displayResults.length > 200 ? "..." : ""}`, `search-res-${functionCall.call_) {
+        console.error("Errore recupero token:", error);
+        if (statusDiv) statusDiv.textContent = `Errore token.`;
+        throw error;
+    }
+}
+
+async function transcribeUserAudio(audioBlob) {
+    if (statusid}`);
             sendClientEvent({ type: "conversation.item.create", item: { type: "function_call_output", call_id: functionCall.call_id, output: JSON.stringify({ results: resultsForAI }) } });
-            sendClientEvent({ type: "response.create" });
-            if (statusDiv) statusDiv.textContent = "Aiko ha consultato la memoria.";
+Div) statusDiv.textContent = "Trascrivo il tuo audio...";
+    console.log("DEBUG:            sendClientEvent({ type: "response.create" });
+            if (statusDiv) statusDiv.textContent = "Aiko ha consultato Invio audioBlob a /api/transcribeAudio, size:", audioBlob.size, "type:", audioBlob la memoria.";
         } catch (e) {
-            console.error("DEBUG (handleFnCall) Errore:", e);
-            addTranscript("Sistema", `Errore critico strumento ricerca: ${e.message}`, `search-catch-${functionCall.call_id}`);
-            sendClientEvent({ type: "conversation.item.create", item: { type: "function_call_output", call_id: functionCall.call_id, output: JSON.stringify({ error: "Errore tecnico nello strumento di ricerca." }) } });
+            console.error("DEBUG (handleFnCall) Errore.type);
+    try {
+        const response = await fetch(TRANSCRIBE_API_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': audioBlob.type || 'audio/webm' },
+:", e);
+            addTranscript("Sistema", `Errore critico strumento ricerca: ${e.message}`, `search-catch-${functionCall.            body: audioBlob
+        });
+
+        const responseBodyText = await response.text();
+        console.log("DEBUG transcribecall_id}`);
+            sendClientEvent({ type: "conversation.item.create", item: { type: "function_call_outputUserAudio: Risposta grezza da /api/transcribeAudio:", responseBodyText);
+
+        if (!response.ok) {", call_id: functionCall.call_id, output: JSON.stringify({ error: "Errore tecnico nello strumento di ricerca." }) } });
             sendClientEvent({ type: "response.create" });
         }
     }
 }
 
 function handleServerEvent(event) {
-    console.log(`DEBUG (handleServerEvent): type='${event.type}', obj:`, JSON.parse(JSON.stringify(event)));
+    console.log(`DEBUG (handleServerEvent): type='${event.type}',
+            let errorDetails = `Errore ${response.status}: ${responseBodyText}`;
+            try {
+                const errorData = JSON.parse(responseBodyText);
+                errorDetails = errorData.error || errorData.details || JSON obj:`, JSON.parse(JSON.stringify(event)));
 
     switch (event.type) {
-        case "session.created":
+        .stringify(errorData);
+            } catch (e) {
+                // errorDetails contiene già responseBodyText
+            }
+            consolecase "session.created":
             currentOpenAISessionId = event.session.id;
-            if (statusDiv) statusDiv.textContent = `Aiko è pronta!`;
+            if (statusDiv) statusDiv.textContent.error("Errore API trascrizione (client):", response.status, errorDetails);
+            if (statusDiv) statusDiv. = `Aiko è pronta!`;
             break;
         case "session.updated": break;
 
         case "input_audio_buffer.speech_started":
-            if (statusDiv) statusDiv.textContent = "Ti ascolto...";
+            if (statusDiv) statusDiv.textContent = "Ti ascoltextContent = "Errore trascrizione audio.";
+            return null;
+        }
+        const data = JSON.parse(responseto...";
             if (mediaRecorder && mediaRecorder.state === "inactive") {
                 audioChunks = [];
-                mediaRecorder.start();
+                mediaRecorder.BodyText);
+        console.log("DEBUG: Trascrizione da Whisper ricevuta:", data.transcript);
+        ifstart();
                 console.log("DEBUG: MediaRecorder avviato.");
             }
             break;
 
         case "input_audio_buffer.speech_stopped":
             if (statusDiv) statusDiv.textContent = "Elaboro il tuo audio...";
-            if (mediaRecorder && mediaRecorder.state === "recording") {
-                mediaRecorder.stop(); // Questo triggererà ondataavailable e onstop (che chiama transcribeUserAudio)
-                console.log("DEBUG: MediaRecorder fermato. Attendo trascrizione da Whisper...");
+            if (media (statusDiv) statusDiv.textContent = "Audio trascritto!";
+        return data.transcript;
+    } catch (errorRecorder && mediaRecorder.state === "recording") {
+                mediaRecorder.stop();
+                console.log("DEBUG: Media) {
+        console.error("Errore fetch /api/transcribeAudio:", error);
+        if (Recorder fermato. Attendo trascrizione da Whisper...");
             }
             break;
 
-        // Gli eventi di trascrizione diretta da OpenAI Realtime per l'utente non vengono più usati per addTranscript
+        // Gli eventi distatusDiv) statusDiv.textContent = "Errore grave trascrizione.";
+        return null;
+    }
+}
+
+async function startConversation() {
+    startButton.disabled = true;
+    stopButton.disabled = false;
+    transcriptsDiv.innerHTML = "";
+    currentConversationHistory = [];
+    currentOpenAISessionId = null; trascrizione diretta da OpenAI Realtime per l'utente non vengono più usati attivamente per addTranscript
         case "conversation.item.input_audio_transcription.delta":
-        case "conversation.item.input_audio_transcription.completed":
+        case "conversation.item.input_audio_transcription.
+    localStream = null;
+    audioChunks = [];
+    console.log("DEBUG: Nuova converscompleted":
         case "conversation.item.created":
         case "conversation.item.updated":
-            if (event.item && event.item.role === "user") {
-                console.log(`DEBUG (handleServerEvent - User Item Event ${event.type}):`, event.item);
+            if (event.azione.");
+
+    try {
+        const summary = await getContextSummary();
+        const token = await getEphemeralTokenAndSessionId(summary);
+        if (!token) { stopConversation(); return; }
+
+        try {
+            localStream = await navigatoritem && event.item.role === "user") {
+                // Solo logging per debug, la trascrizione vera.mediaDevices.getUserMedia({ audio: true });
+            if (statusDiv) statusDiv.textContent = "Microfono attivo.";
+
+            const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus arriva da Whisper -> mediaRecorder.onstop
+                console.log(`DEBUG (handleServerEvent - User Item Event ${event.type}):`, JSON.parse(JSON.stringify(event.item)));
             }
             break;
 
         case "response.created":
-            // currentAIResponseId = event.response.id; // Non più necessario se appendToTranscript usa response_id
+            //', 'audio/mp4', ''];
+            let supportedMimeType = '';
+            for (const mimeType of mimeTypes) {
+                if (mimeType === '' || MediaRecorder.isTypeSupported(mimeType)) {
+                    supportedMimeType currentAIResponseId non è più strettamente necessario qui se appendToTranscript usa event.response_id
             if (statusDiv) statusDiv.textContent = "Aiko sta pensando...";
             break;
-        case "response.audio_transcript.delta": // Per l'IA
+        case "response. = mimeType;
+                    break;
+                }
+            }
+            console.log("DEBUG: MediaRecorder userà MIME type:", supportedMimeType || "default del browser");
+            mediaRecorder = new MediaRecorder(localStream, supportedaudio_transcript.delta": // Per l'IA
             if (typeof event.delta === 'string') {
-                appendToTranscript("AI", event.delta, event.response_id); // Passa sempre response_id
+                appendToMimeType ? { mimeType: supportedMimeType } : {});
+
+            mediaRecorder.ondataavailable = (Transcript("AI", event.delta, event.response_id);
             }
             if (statusDiv) statusDiv.textContent = "Aiko risponde...";
             break;
         case "response.done":
-            if (event.response.output && event.response.output[0]?.type === "function_call") {
-                handleFunctionCall(event.response.output[0]);
+event) => {
+                if (event.data.size > 0) audioChunks.push(event.data);
+            };            if (event.response.output && event.response.output[0]?.type === "function_call") {
+                handleFunctionCall(
+
+            mediaRecorder.onstop = async () => {
+                const blobMimeType = mediaRecorder.mimeType || supportedevent.response.output[0]);
             } else {
                 if (statusDiv) statusDiv.textContent = "Aiko ha finito di parlare.";
             }
             break;
         case "error":
-            console.error("Errore OpenAI:", event);
+            MimeType || 'audio/webm';
+                const audioBlob = new Blob(audioChunks, { type: blobMimeType });
+                audioChunks = [];
+                
+                if (audioBlob.size > 100) {
+console.error("Errore OpenAI:", event);
             if (statusDiv) statusDiv.textContent = `Errore OpenAI: ${event.message || event.code}`;
-            if (["session_expired", "token_expired", "session_not_found", "connection_closed"].includes(event.code)) {
+            if (["session_expired", "token_expired", "session_not_                    const userTranscript = await transcribeUserAudio(audioBlob);
+                    if (userTranscript && userTranscript.trim() !== '') {
+found", "connection_closed"].includes(event.code)) {
                 saveCurrentSessionHistoryAndStop();
-            }
+                        addTranscript("Tu", userTranscript, `user-turn-${Date.now()}`);
+                    } else {
+                                    }
             break;
         default:
              console.log(`DEBUG (handleServerEvent - EVENTO NON GESTITO ESPLICITAMENTE): type='${event.type}'.`);
             break;
-    }
+    }console.log("DEBUG: Trascrizione da Whisper vuota o fallita.");
+                        addTranscript("Tu", "(
 }
 
 stopButton.addEventListener('click', () => saveCurrentSessionHistoryAndStop());
 startButton.addEventListener('click', startConversation);
-window.addEventListener('beforeunload', () => { if (pc && pc.connectionState !== "closed") stopConversation(); });
+window.addEventListener('beforeunload', () => { if (pc && pc.connectionStateTrascrizione audio fallita o audio non rilevato)", `user-fail-${Date.now()}`);
+                    }
+                } else !== "closed") stopConversation(); });
