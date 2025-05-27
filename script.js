@@ -13,49 +13,61 @@ const SUMMARY_API_ENDPOINT = "/api/generateContextSummary";
 
 let pc;
 let dc;
-let localStream;
-let currentAIResponseId = null;
-let currentConversationHistory = [];
+let ephemeralKeyGlobal;
+let currentOpenAISessionId = null;
 
-async function getContextSummary() {
-    console.log("DEBUG: Richiesta riassunto del contesto...");
-    if (statusDiv) statusDiv.textContent = "Analizzo conversazioni precedenti...";
+let currentConversationHistory = [];
+let currentTurnUserTranscript = "";
+
+async function fetchRecentMemoryForContext(limit = 7) {
+    console.log(`DEBUG: Fetching last ${limit} memory entries for continuous context...`);
+    if (statusDiv) statusDiv.textContent = "Aiko consulta la memoria recente...";
     try {
-        const response = await fetch(SUMMARY_API_ENDPOINT);
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            console.warn(`Errore recupero riassunto (${response.status}):`, errorData.error || 'Errore sconosciuto');
-            return "";
+        const response = await fetch(`${SEARCH_MEMORY_API_ENDPOINT}?fetchLast=${limit}`);
+        if (response.ok) {
+            const data = await response.json();
+            console.log("DEBUG: Memoria recente per contesto ricevuta:", data.results || "(vuota)");
+            if (statusDiv) statusDiv.textContent = "Memoria recente recuperata.";
+            return data.results || "";
         }
-        const data = await response.json();
-        console.log("DEBUG: Riassunto del contesto ricevuto:", data.summary || "(Nessun riassunto disponibile)");
-        if (statusDiv) statusDiv.textContent = "Contesto recuperato.";
-        return data.summary || "";
+        console.warn("DEBUG: Impossibile fetchare memoria recente. Status:", response.status);
+        if (statusDiv) statusDiv.textContent = "Errore consultazione memoria recente.";
+        return "";
     } catch (error) {
-        console.warn("Errore fetch recupero riassunto:", error);
-        if (statusDiv) statusDiv.textContent = "Errore recupero contesto.";
+        console.error("DEBUG: Errore fetch memoria recente:", error);
+        if (statusDiv) statusDiv.textContent = "Errore grave consultazione memoria.";
         return "";
     }
 }
 
-async function getEphemeralToken(contextSummary) {
-    if (statusDiv) statusDiv.textContent = "Preparo la sessione con Aiko...";
+async function getContextSummary() {
+    if (statusDiv) statusDiv.textContent = "Analizzo contesto generale...";
+    try {
+        const response = await fetch(SUMMARY_API_ENDPOINT);
+        if (!response.ok) { console.warn("Errore recupero riassunto generale"); return ""; }
+        const data = await response.json();
+        console.log("DEBUG: Riassunto generale ricevuto:", data.summary || "(Nessun riassunto)");
+        if (statusDiv) statusDiv.textContent = "Contesto generale analizzato.";
+        return data.summary || "";
+    } catch (error) { console.warn("Errore fetch riassunto generale:", error); return ""; }
+}
+
+async function getEphemeralTokenAndSessionId(contextSummary) {
+    if (statusDiv) statusDiv.textContent = "Preparo connessione con Aiko...";
     try {
         const response = await fetch(SESSION_API_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contextSummary: contextSummary })
         });
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`Errore backend token (${response.status}): ${errorData.error || 'Sconosciuto'}`);
-        }
+        if (!response.ok) { const err = await response.json(); throw new Error(err.error || 'Errore backend token');}
         const data = await response.json();
         if (!data.client_secret) throw new Error('Token non ricevuto.');
+        ephemeralKeyGlobal = data.client_secret;
         return data.client_secret;
     } catch (error) {
-        console.error("Errore recupero token effimero:", error);
-        if (statusDiv) statusDiv.textContent = `Errore token: ${error.message}`;
+        console.error("Errore recupero token:", error);
+        if (statusDiv) statusDiv.textContent = `Errore token.`;
         throw error;
     }
 }
@@ -64,18 +76,19 @@ async function startConversation() {
     startButton.disabled = true;
     stopButton.disabled = false;
     transcriptsDiv.innerHTML = "";
-    currentAIResponseId = null;
     currentConversationHistory = [];
-    console.log("DEBUG: Nuova conversazione, history resettata.");
+    currentTurnUserTranscript = "";
+    currentOpenAISessionId = null;
+    console.log("DEBUG: Nuova conversazione.");
 
     try {
         const summary = await getContextSummary();
-        const ephemeralKey = await getEphemeralToken(summary);
-        if (!ephemeralKey) { stopConversation(); return; }
+        const token = await getEphemeralTokenAndSessionId(summary);
+        if (!token) { stopConversation(); return; }
 
         pc = new RTCPeerConnection();
         pc.ontrack = (event) => {
-            if (event.streams && event.streams[0]) {
+            if (event.streams?.[0]) {
                 aiAudioPlayer.srcObject = event.streams[0];
                 aiAudioPlayer.play().catch(e => console.warn("Audio play err:", e));
             }
@@ -87,15 +100,15 @@ async function startConversation() {
 
         dc = pc.createDataChannel("oai-events", { ordered: true });
         dc.onopen = () => {
-            if (statusDiv) statusDiv.textContent = "Connesso ad Aiko. In attesa...";
+            if (statusDiv) statusDiv.textContent = "Connesso ad Aiko. Parla pure!";
             sendClientEvent({
                 type: "session.update",
                 session: {
-                    turn_detection: { type: "server_vad", threshold: 0.5, silence_duration_ms: 800, create_response: true },
+                    turn_detection: { type: "server_vad", threshold: 0.5, silence_duration_ms: 1000, create_response: true },
                     tools: [{
                         type: "function",
                         name: "cerca_nella_mia_memoria_personale",
-                        description: `Cerca nelle conversazioni passate con Alejandro per trovare informazioni specifiche, dettagli personali, preferenze o rispondere a domande su eventi precedenti che lo riguardano. Se ti chiede dell'ultima conversazione o di cosa parlavate, prova a usare come termini di ricerca parole chiave significative delle sue ultime affermazioni (se le hai dal riassunto del contesto) o temi generali recenti.`,
+                        description: `Cerca nelle conversazioni passate con Alejandro per trovare informazioni specifiche, dettagli personali, preferenze o rispondere a domande su eventi precedenti che lo riguardano. Se ti chiede dell'ultima conversazione o di cosa parlavate, prova a usare come termini di ricerca parole chiave significative delle sue ultime affermazioni o temi generali recenti.`,
                         parameters: {
                             type: "object",
                             properties: { termini_di_ricerca: { type: "string", description: `Termini di ricerca specifici e concisi (2-4 parole chiave) per trovare informazioni nella memoria. Se Alejandro chiede un riepilogo generale o dell'ultima conversazione, identifica i concetti chiave più recenti o specifici di cui potresti aver bisogno.` } },
@@ -122,12 +135,10 @@ async function startConversation() {
         if (statusDiv) statusDiv.textContent = "Connessione ad OpenAI...";
 
         const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=${MODEL_NAME}`, {
-            method: "POST", body: offer.sdp, headers: { "Authorization": `Bearer ${ephemeralKey}`, "Content-Type": "application/sdp" },
+            method: "POST", body: offer.sdp, headers: { "Authorization": `Bearer ${ephemeralKeyGlobal}`, "Content-Type": "application/sdp" },
         });
         if (!sdpResponse.ok) throw new Error(`Errore SDP OpenAI (${sdpResponse.status}): ${await sdpResponse.text()}`);
         await pc.setRemoteDescription({ type: "answer", sdp: await sdpResponse.text() });
-        if (statusDiv) statusDiv.textContent = "Connessione stabilita con Aiko!";
-
     } catch (error) {
         console.error("Errore avvio conversazione:", error);
         if (statusDiv) statusDiv.textContent = `Errore avvio: ${error.message.substring(0,100)}`;
@@ -169,6 +180,7 @@ function stopConversation() {
     if (statusDiv) statusDiv.textContent = "Pronto per una nuova conversazione!";
     if (aiAudioPlayer) aiAudioPlayer.srcObject = null;
     currentAIResponseId = null;
+    currentOpenAISessionId = null;
 }
 
 function sendClientEvent(event) { if (dc && dc.readyState === "open") dc.send(JSON.stringify(event)); }
@@ -227,68 +239,69 @@ async function handleFunctionCall(functionCall) {
             const args = JSON.parse(functionCall.arguments);
             const searchQuery = args.termini_di_ricerca;
             addTranscript("Sistema", `Aiko cerca: "${searchQuery}"...`, `search-${functionCall.call_id}`);
-
             const searchResponse = await fetch(`${SEARCH_MEMORY_API_ENDPOINT}?query=${encodeURIComponent(searchQuery)}`);
-
             let resultsForAI = "Errore durante la ricerca o nessun risultato.";
             let displayResults = "Errore durante la ricerca.";
 
             if (searchResponse.ok) {
-                // Tentiamo di parsare come JSON, ma pronti a gestire non-JSON
                 try {
                     const searchData = await searchResponse.json();
                     resultsForAI = searchData.results || "Nessun ricordo trovato per quei termini.";
                     displayResults = resultsForAI;
-                    console.log("DEBUG (handleFnCall): Risultati da /api/searchMemory (JSON valido):", searchData);
                 } catch (parseError) {
-                    // Se il parsing JSON fallisce, leggi la risposta come testo
-                    console.warn("DEBUG (handleFnCall): Risposta da /api/searchMemory non era JSON valido. Leggo come testo. Errore:", parseError);
-                    const textResponse = await searchResponse.text(); // Leggi come testo
-                    resultsForAI = `Risposta testuale dal server (potrebbe essere un errore): ${textResponse.substring(0, 200)}`;
+                    console.warn("DEBUG (handleFnCall): Risposta da /api/searchMemory non JSON. Leggo come testo.", parseError);
+                    const textResponse = await searchResponse.text();
+                    resultsForAI = `Risposta testuale (errore?): ${textResponse.substring(0, 200)}`;
                     displayResults = resultsForAI;
-                    console.log("DEBUG (handleFnCall): Risposta testuale da /api/searchMemory:", textResponse);
                 }
             } else {
-                // Se la risposta non è ok (es. 404, 500)
                 let errorText = `Errore server ${searchResponse.status}`;
-                try {
-                    const errorData = await searchResponse.json();
-                    errorText = `Errore dal server di ricerca (${searchResponse.status}): ${errorData.error || "Dettagli non disponibili"}`;
-                } catch (e) {
-                    // Fallback se anche il parsing dell'errore JSON fallisce
-                    errorText = `Errore server ${searchResponse.status}: ${await searchResponse.text().catch(() => "Impossibile leggere dettagli errore")}`;
-                }
-                resultsForAI = errorText;
-                displayResults = resultsForAI;
-                console.error("DEBUG (handleFnCall): Errore da /api/searchMemory:", resultsForAI);
+                try { const errorData = await searchResponse.json(); errorText = `Errore ricerca (${searchResponse.status}): ${errorData.error || ""}`; }
+                catch (e) { errorText = `Errore server ${searchResponse.status}: ${await searchResponse.text().catch(() => "")}`; }
+                resultsForAI = errorText; displayResults = resultsForAI;
             }
-
             addTranscript("Sistema", `Risultati per "${searchQuery}": ${displayResults.substring(0, 200)}${displayResults.length > 200 ? "..." : ""}`, `search-res-${functionCall.call_id}`);
-            sendClientEvent({
-                type: "conversation.item.create",
-                item: {
-                    type: "function_call_output",
-                    call_id: functionCall.call_id,
-                    output: JSON.stringify({ results: resultsForAI })
-                }
-            });
+            sendClientEvent({ type: "conversation.item.create", item: { type: "function_call_output", call_id: functionCall.call_id, output: JSON.stringify({ results: resultsForAI }) } });
             sendClientEvent({ type: "response.create" });
             if (statusDiv) statusDiv.textContent = "Aiko ha consultato la memoria.";
-
         } catch (e) {
-            console.error("DEBUG (handleFnCall) Errore nel blocco try-catch principale:", e);
-            addTranscript("Sistema", `Errore critico nello strumento di ricerca: ${e.message}`, `search-catch-${functionCall.call_id}`);
-            sendClientEvent({
-                type: "conversation.item.create",
-                item: {
-                    type: "function_call_output",
-                    call_id: functionCall.call_id,
-                    output: JSON.stringify({ error: "Non sono riuscita ad elaborare la richiesta di ricerca a causa di un errore tecnico." })
-                }
-            });
+            console.error("DEBUG (handleFnCall) Errore:", e);
+            addTranscript("Sistema", `Errore critico strumento ricerca: ${e.message}`, `search-catch-${functionCall.call_id}`);
+            sendClientEvent({ type: "conversation.item.create", item: { type: "function_call_output", call_id: functionCall.call_id, output: JSON.stringify({ error: "Errore tecnico nello strumento di ricerca." }) } });
             sendClientEvent({ type: "response.create" });
         }
     }
+}
+
+async function sendMemoryContextToAIForNextTurn(instructionsContent) {
+    if (!currentOpenAISessionId || !ephemeralKeyGlobal) { // Usa ephemeralKeyGlobal
+        console.warn("DEBUG: ID sessione OpenAI o token non disponibili per inviare contesto memoria.");
+        return;
+    }
+    const instructionsForNextTurn = `CONTESTO AGGIUNTIVO DALLA MEMORIA RECENTE (da considerare OLTRE al riassunto iniziale e alle tue istruzioni di base):
+    ---- INIZIO MEMORIA RECENTE ----
+    ${instructionsContent}
+    ---- FINE MEMORIA RECENTE ----
+    Ora rispondi alla domanda/affermazione di Alejandro tenendo conto di questo.`;
+
+    console.log("DEBUG: Invio aggiornamento istruzioni con memoria recente per il prossimo turno...");
+    sendClientEvent({
+        type: "session.update",
+        session: {
+            instructions: instructionsForNextTurn,
+            turn_detection: { type: "server_vad", threshold: 0.5, silence_duration_ms: 1000, create_response: true },
+             tools: [{
+                type: "function",
+                name: "cerca_nella_mia_memoria_personale",
+                description: `Cerca nelle conversazioni passate con Alejandro per trovare informazioni specifiche, dettagli personali, preferenze o rispondere a domande su eventi precedenti che lo riguardano. Se ti chiede dell'ultima conversazione o di cosa parlavate, prova a usare come termini di ricerca parole chiave significative delle sue ultime affermazioni o temi generali recenti.`,
+                parameters: {
+                    type: "object",
+                    properties: { termini_di_ricerca: { type: "string", description: `Termini di ricerca specifici e concisi (2-4 parole chiave) per trovare informazioni nella memoria. Se Alejandro chiede un riepilogo generale o dell'ultima conversazione, identifica i concetti chiave più recenti o specifici di cui potresti aver bisogno.` } },
+                    required: ["termini_di_ricerca"]
+                }
+            }]
+        }
+    });
 }
 
 function handleServerEvent(event) {
@@ -296,71 +309,62 @@ function handleServerEvent(event) {
 
     switch (event.type) {
         case "session.created":
-            if (statusDiv) statusDiv.textContent = `Sessione con Aiko creata.`;
+            currentOpenAISessionId = event.session.id;
+            console.log("DEBUG: Sessione OpenAI creata, ID:", currentOpenAISessionId);
+            if (statusDiv) statusDiv.textContent = `Aiko è pronta! (Sessione: ...${currentOpenAISessionId.slice(-4)})`;
             break;
         case "session.updated":
+            console.log("DEBUG: Sessione OpenAI aggiornata.");
             break;
         case "input_audio_buffer.speech_started":
             if (statusDiv) statusDiv.textContent = "Ti ascolto...";
-            break;
-        case "input_audio_buffer.speech_stopped":
-            if (statusDiv) statusDiv.textContent = "Elaboro il tuo audio...";
+            currentTurnUserTranscript = "";
             break;
 
-        case "conversation.item.created":
-            if (event.item && event.item.role === "user" && event.item.type === "message") {
-                console.log(`DEBUG (handleServerEvent - USER MESSAGE CREATED): item_id='${event.item.id}'. Verifico contenuto... Item:`, JSON.parse(JSON.stringify(event.item)));
-                let userTranscript = null;
-                if (typeof event.item.content === 'string') { // Caso 1: item.content è direttamente la stringa
-                    userTranscript = event.item.content;
-                }
-                else if (event.item.content && Array.isArray(event.item.content) && event.item.content.length > 0) { // Caso 2: item.content è un array
-                    if (typeof event.item.content[0] === 'string') { // Sotto-caso 2a: il primo elemento dell'array è la stringa
-                        userTranscript = event.item.content[0];
-                    } else if (event.item.content[0].type === "input_audio" && typeof event.item.content[0].transcript === 'string') { // Sotto-caso 2b: la struttura che abbiamo visto
-                        userTranscript = event.item.content[0].transcript;
-                    }
-                }
-
-                if (userTranscript && userTranscript.trim() !== '') {
-                    console.log(`DEBUG (handleServerEvent - USER MESSAGE CREATED): TROVATA TRASCRIZIONE! Transcript='${userTranscript}'`);
-                    addTranscript("Tu", userTranscript, event.item.id);
-                } else {
-                    console.warn(`DEBUG (handleServerEvent - USER MESSAGE CREATED): Trascrizione non trovata o vuota nel formato atteso. Item content:`, event.item.content);
-                }
-            }
-            break;
-
-        case "conversation.item.updated":
-            if (event.item && event.item.role === "user" && event.item.type === "message" &&
-                event.item.status === "completed") {
-                console.log(`DEBUG (handleServerEvent - USER MESSAGE UPDATED): item_id='${event.item.id}'. Verifico contenuto... Item:`, JSON.parse(JSON.stringify(event.item)));
-                let userTranscriptUpdated = null;
-                if (typeof event.item.content === 'string') {
-                     userTranscriptUpdated = event.item.content;
-                } else if (event.item.content && Array.isArray(event.item.content) && event.item.content.length > 0) {
-                    if (typeof event.item.content[0] === 'string') {
-                        userTranscriptUpdated = event.item.content[0];
-                    } else if (event.item.content[0].type === "input_audio" && typeof event.item.content[0].transcript === 'string') {
-                        userTranscriptUpdated = event.item.content[0].transcript;
-                    }
-                }
-
-                if (userTranscriptUpdated && userTranscriptUpdated.trim() !== '') {
-                    console.log(`DEBUG (handleServerEvent - USER MESSAGE UPDATED): TROVATA TRASCRIZIONE! Transcript='${userTranscriptUpdated}'`);
-                    addTranscript("Tu", userTranscriptUpdated, event.item.id);
-                } else {
-                    console.warn(`DEBUG (handleServerEvent - USER MESSAGE UPDATED): Item utente aggiornato, ma trascrizione non trovata o vuota. Item content:`, event.item.content);
-                }
+        case "conversation.item.input_audio_transcription.delta":
+            if (event.delta && typeof event.delta === 'string') {
+                currentTurnUserTranscript += event.delta;
             }
             break;
 
         case "conversation.item.input_audio_transcription.completed":
-            console.log(`DEBUG (handleServerEvent - INPUT_AUDIO_TRANSCRIPTION.COMPLETED - Fallback): Transcript='${event.transcript}'`);
+            console.log(`DEBUG (INPUT_AUDIO_TRANSCRIPTION.COMPLETED): Transcript='${event.transcript}'`);
             if (event.transcript && typeof event.transcript === 'string' && event.transcript.trim() !== '') {
-                addTranscript("Tu", event.transcript, event.item_id);
+                currentTurnUserTranscript = event.transcript.trim();
             } else {
-                console.warn(`DEBUG (handleServerEvent - INPUT_AUDIO_TRANSCRIPTION.COMPLETED - Fallback): Transcript non valido.`);
+                console.warn(`DEBUG (INPUT_AUDIO_TRANSCRIPTION.COMPLETED): Transcript non valido o vuoto.`);
+            }
+            // Non chiamiamo addTranscript o sendMemoryContextToAIForNextTurn qui,
+            // lo faremo in input_audio_buffer.speech_stopped
+            break;
+
+        case "input_audio_buffer.speech_stopped":
+            if (statusDiv) statusDiv.textContent = "Elaboro il tuo audio...";
+            if (currentTurnUserTranscript.trim() !== "") {
+                console.log("DEBUG (speech_stopped): Trascrizione utente finale del turno:", currentTurnUserTranscript);
+                addTranscript("Tu", currentTurnUserTranscript, `user-turn-${Date.now()}`);
+                fetchRecentMemoryForContext(7).then(recentMemory => {
+                    sendMemoryContextToAIForNextTurn(recentMemory);
+                    // Non è necessario inviare response.create se create_response in turn_detection è true
+                    // e la sessione è stata aggiornata con le nuove istruzioni.
+                });
+            } else {
+                console.log("DEBUG (speech_stopped): Nessuna trascrizione utente valida per questo turno.");
+                // Se non c'è trascrizione utente, l'IA potrebbe comunque rispondere (es. se c'è silenzio)
+                // o potremmo dover forzare una risposta vuota se create_response non scatta.
+                // Per ora, lasciamo che turn_detection gestisca questo.
+            }
+            currentTurnUserTranscript = ""; // Resetta per il prossimo turno
+            break;
+
+        case "conversation.item.created":
+             if (event.item && event.item.role === "user" && event.item.type === "message") {
+                 console.log(`DEBUG (handleServerEvent - USER MESSAGE CREATED): item_id='${event.item.id}'. Contenuto:`, event.item.content);
+            }
+            break;
+        case "conversation.item.updated":
+            if (event.item && event.item.role === "user" && event.item.type === "message") {
+                 console.warn(`DEBUG (handleServerEvent - USER MESSAGE UPDATED): Item utente aggiornato. Item:`, JSON.parse(JSON.stringify(event.item)));
             }
             break;
 
