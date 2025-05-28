@@ -81,7 +81,9 @@ export default async function handler(req, res) {
 
         console.log(`DEBUG api/transcribeAudio: FormData preparato. Invio a OpenAI Whisper API...`);
 
-        const whisperResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        const WHISPER_API_TIMEOUT_MS = 50000; // 50 secondi di timeout
+
+        const fetchPromise = fetch("https://api.openai.com/v1/audio/transcriptions", {
             method: "POST",
             headers: {
                 ...form.getHeaders(),
@@ -89,6 +91,26 @@ export default async function handler(req, res) {
             },
             body: form,
         });
+
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout API Whisper dopo ' + (WHISPER_API_TIMEOUT_MS / 1000) + ' secondi')), WHISPER_API_TIMEOUT_MS)
+        );
+
+        let whisperResponse;
+        try {
+            whisperResponse = await Promise.race([fetchPromise, timeoutPromise]);
+            if (whisperResponse instanceof Error) { // Se è l'errore di timeout da timeoutPromise
+                throw whisperResponse; // Rilancia l'errore di timeout
+            }
+        } catch (error) {
+            if (error.message && error.message.startsWith('Timeout API Whisper')) {
+                console.error(`Errore di Timeout Interno: ${error.message}`);
+                return res.status(408).json({ error: "La trascrizione dell'audio ha impiegato troppo tempo (timeout).", details: error.message });
+            }
+            // Altri errori di rete o fetch
+            console.error("Errore durante la chiamata fetch a Whisper:", error);
+            return res.status(500).json({ error: "Errore di rete durante la comunicazione con l'API Whisper.", details: error.message });
+        }
 
         const responseBodyText = await whisperResponse.text();
 

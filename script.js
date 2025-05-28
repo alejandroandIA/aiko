@@ -73,7 +73,12 @@ async function transcribeUserAudio(audioBlob) {
             let errorDetails = `Errore ${response.status}: ${responseBodyText}`;
             try { const errorData = JSON.parse(responseBodyText); errorDetails = errorData.error?.details || errorData.error || JSON.stringify(errorData); } catch (e) {}
             console.error("Errore API trascrizione Whisper (client):", response.status, errorDetails);
-            if (statusDiv) statusDiv.textContent = "Errore trascrizione Whisper."; return null;
+            if (response.status === 408) { // Timeout personalizzato dal backend
+                 if (statusDiv) statusDiv.textContent = "La trascrizione sta impiegando troppo tempo. Riprova parlando più brevemente.";
+            } else {
+                 if (statusDiv) statusDiv.textContent = "Errore trascrizione Whisper.";
+            }
+            return null;
         }
         const data = JSON.parse(responseBodyText);
         console.log("DEBUG: Trascrizione da Whisper ricevuta:", data.transcript);
