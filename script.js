@@ -15,31 +15,27 @@ const SUMMARY_API_ENDPOINT = "/api/generateContextSummary";
 let pc;
 let dc;
 let ephemeralKeyGlobal;
-let currentOpenAISessionId = null;
-let localStream = null;
+let currentOpenAISessionId = null; // Usato per tracciare se la sessione è attiva
+let webrtcStreamForOpenAI = null; // Stream dedicato per OpenAI WebRTC
+let mediaRecorderStream = null;   // Stream dedicato per MediaRecorder (per Whisper)
 let mediaRecorder;
 let audioChunks = [];
+let whisperGracePeriodTimer = null;
+let isRecordingForWhisper = false;
 
-let currentConversationHistory = []; // Questa conterrà le trascrizioni di Whisper per l'utente
 
-// --- Funzioni Helper ---
+let currentConversationHistory = [];
 
 async function getContextSummary() {
     if (statusDiv) statusDiv.textContent = "Analizzo contesto generale...";
     try {
         const response = await fetch(SUMMARY_API_ENDPOINT);
-        if (!response.ok) {
-            console.warn("Errore recupero riassunto generale, status:", response.status);
-            return "";
-        }
+        if (!response.ok) { console.warn("Errore recupero riassunto generale, status:", response.status); return ""; }
         const data = await response.json();
         console.log("DEBUG: Riassunto generale ricevuto:", data.summary || "(Nessun riassunto)");
         if (statusDiv) statusDiv.textContent = "Contesto generale analizzato.";
         return data.summary || "";
-    } catch (error) {
-        console.warn("Errore fetch riassunto generale:", error);
-        return "";
-    }
+    } catch (error) { console.warn("Errore fetch riassunto generale:", error); return ""; }
 }
 
 async function getEphemeralTokenAndSessionId(contextSummary) {
@@ -52,28 +48,19 @@ async function getEphemeralTokenAndSessionId(contextSummary) {
         });
         if (!response.ok) {
             let errorMsg = 'Errore backend token';
-            try {
-                const errText = await response.text();
-                const err = JSON.parse(errText || "{}");
-                errorMsg = err.error || `Errore ${response.status}: ${errText.substring(0, 100)}`;
-            } catch (e) {
-                errorMsg = `Errore ${response.status}: risposta non JSON o illeggibile.`;
-            }
+            try { const errText = await response.text(); const err = JSON.parse(errText || "{}"); errorMsg = err.error || `Errore ${response.status}: ${errText.substring(0, 100)}`; }
+            catch (e) { errorMsg = `Errore ${response.status}: risposta non JSON o illeggibile.`;}
             throw new Error(errorMsg);
         }
         const data = await response.json();
         if (!data.client_secret) throw new Error('Token non ricevuto.');
         ephemeralKeyGlobal = data.client_secret;
         return data.client_secret;
-    } catch (error) {
-        console.error("Errore recupero token:", error);
-        if (statusDiv) statusDiv.textContent = `Errore token: ${error.message.substring(0,60)}`;
-        throw error;
-    }
+    } catch (error) { console.error("Errore recupero token:", error); if (statusDiv) statusDiv.textContent = `Errore token: ${error.message.substring(0,60)}`; throw error; }
 }
 
 async function transcribeUserAudio(audioBlob) {
-    if (statusDiv) statusDiv.textContent = "Trascrivo il tuo audio (Whisper)..."; // Indica che è Whisper
+    if (statusDiv) statusDiv.textContent = "Trascrivo il tuo audio (Whisper)...";
     console.log("DEBUG: Invio audioBlob a /api/transcribeAudio, size:", audioBlob.size, "type:", audioBlob.type);
     try {
         const response = await fetch(TRANSCRIBE_API_ENDPOINT, {
@@ -81,175 +68,104 @@ async function transcribeUserAudio(audioBlob) {
             headers: { 'Content-Type': audioBlob.type || 'audio/webm' },
             body: audioBlob
         });
-
         const responseBodyText = await response.text();
-
         if (!response.ok) {
             let errorDetails = `Errore ${response.status}: ${responseBodyText}`;
-            try {
-                const errorData = JSON.parse(responseBodyText);
-                errorDetails = errorData.error?.details || errorData.error || JSON.stringify(errorData);
-            } catch (e) { /* Usa responseBodyText */ }
+            try { const errorData = JSON.parse(responseBodyText); errorDetails = errorData.error?.details || errorData.error || JSON.stringify(errorData); } catch (e) {}
             console.error("Errore API trascrizione Whisper (client):", response.status, errorDetails);
-            if (statusDiv) statusDiv.textContent = "Errore trascrizione Whisper.";
-            return null;
+            if (statusDiv) statusDiv.textContent = "Errore trascrizione Whisper."; return null;
         }
         const data = JSON.parse(responseBodyText);
         console.log("DEBUG: Trascrizione da Whisper ricevuta:", data.transcript);
-        // Lo stato verrà aggiornato dopo che Aiko risponde o da speech_stopped
         return data.transcript;
-    } catch (error) {
-        console.error("Errore fetch /api/transcribeAudio (Whisper):", error);
-        if (statusDiv) statusDiv.textContent = "Errore grave trascrizione Whisper.";
-        return null;
-    }
+    } catch (error) { console.error("Errore fetch /api/transcribeAudio (Whisper):", error); if (statusDiv) statusDiv.textContent = "Errore grave trascrizione Whisper."; return null; }
 }
-
-// --- Logica Principale della Conversazione ---
 
 async function startConversation() {
     startButton.disabled = true;
     stopButton.disabled = false;
     transcriptsDiv.innerHTML = "";
     currentConversationHistory = [];
-    currentOpenAISessionId = null;
-    localStream = null;
+    currentOpenAISessionId = null; 
     audioChunks = [];
+    isRecordingForWhisper = false;
+    if (whisperGracePeriodTimer) clearTimeout(whisperGracePeriodTimer);
     console.log("DEBUG: Nuova conversazione.");
 
     try {
         const summary = await getContextSummary();
         const token = await getEphemeralTokenAndSessionId(summary);
-        if (!token) {
-            stopConversation();
-            return;
-        }
+        if (!token) { stopConversation(); return; }
 
+        // Stream per OpenAI Realtime (rimane attivo)
         try {
-            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            if (statusDiv) statusDiv.textContent = "Microfono attivo.";
-
-            const mimeTypes = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', ''];
-            let supportedMimeType = '';
-            for (const mimeType of mimeTypes) {
-                if (mimeType === '' || MediaRecorder.isTypeSupported(mimeType)) {
-                    supportedMimeType = mimeType;
-                    break;
-                }
-            }
-            console.log("DEBUG: MediaRecorder userà MIME type:", supportedMimeType || "default del browser");
-            mediaRecorder = new MediaRecorder(localStream, supportedMimeType ? { mimeType: supportedMimeType } : {});
-
-            mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) audioChunks.push(event.data);
-            };
-
-            // Modificato mediaRecorder.onstop per NON inviare testo all'API Realtime
-            mediaRecorder.onstop = async () => {
-                const blobMimeType = mediaRecorder.mimeType || supportedMimeType || 'audio/webm';
-                const audioBlob = new Blob(audioChunks, { type: blobMimeType });
-                audioChunks = []; 
-                
-                console.log("DEBUG mediaRecorder.onstop (per Whisper): audioBlob.size:", audioBlob.size);
-
-                if (audioBlob.size > 200) { 
-                    const userTranscript = await transcribeUserAudio(audioBlob); // Trascrive per UI e memoria
-
-                    if (userTranscript && userTranscript.trim() !== '') {
-                        addTranscript("Tu", userTranscript, `user-whisper-${Date.now()}`);
-                    } else {
-                        console.warn("DEBUG script.js: Trascrizione da Whisper (per memoria/UI) vuota o fallita.");
-                        addTranscript("Tu", "(Trascrizione Whisper fallita o audio non rilevato)", `user-whisper-fail-${Date.now()}`);
-                    }
-                } else {
-                     console.log("DEBUG script.js: AudioBlob troppo piccolo per trascrizione Whisper (size:", audioBlob.size, ")");
-                     addTranscript("Tu", "(Audio troppo breve per trascrizione Whisper)", `user-whisper-short-${Date.now()}`);
-                }
-                // NON inviamo più l'input utente testuale qui, né response.create.
-                // L'API Realtime gestirà la risposta basata sull'audio che ha ricevuto.
-            };
-
-        } catch (getUserMediaError) {
-            console.error("Errore accesso al microfono:", getUserMediaError);
-            if (statusDiv) statusDiv.textContent = "Errore microfono. Controlla i permessi.";
+            webrtcStreamForOpenAI = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (e) {
+            console.error("Errore ottenimento stream per OpenAI WebRTC:", e);
+            if (statusDiv) statusDiv.textContent = "Errore microfono (WebRTC).";
             stopConversation(); return;
         }
+        
+        // MediaRecorder verrà inizializzato e avviato da input_audio_buffer.speech_started
+        // usando uno stream separato o lo stesso se gestito correttamente.
+        // Per ora, creiamo l'istanza qui.
+        const mimeTypes = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', ''];
+        let supportedMimeType = '';
+        for (const mimeType of mimeTypes) { if (mimeType === '' || MediaRecorder.isTypeSupported(mimeType)) { supportedMimeType = mimeType; break; }}
+        console.log("DEBUG: MediaRecorder userà MIME type (potenziale):", supportedMimeType || "default del browser");
+        
+        // Nota: MediaRecorder verrà effettivamente creato con uno stream fresco in speech_started
 
         pc = new RTCPeerConnection();
-        pc.ontrack = (event) => {
-            if (event.streams?.[0]) {
-                aiAudioPlayer.srcObject = event.streams[0];
-                aiAudioPlayer.play().catch(e => {});
-            }
-        };
-        if (localStream) {
-            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+        pc.ontrack = (event) => { if (event.streams?.[0]) { aiAudioPlayer.srcObject = event.streams[0]; aiAudioPlayer.play().catch(e => {});}};
+        if (webrtcStreamForOpenAI) {
+            webrtcStreamForOpenAI.getTracks().forEach(track => pc.addTrack(track, webrtcStreamForOpenAI));
         }
 
         dc = pc.createDataChannel("oai-events", { ordered: true });
-        
         dc.onopen = () => {
             if (statusDiv) statusDiv.textContent = "Connesso ad Aiko. Parla pure!";
             sendClientEvent({
                 type: "session.update",
                 session: {
-                    // Ripristinato create_response: true. La VAD OpenAI gestisce quando Aiko risponde.
                     turn_detection: { type: "server_vad", threshold: 0.5, silence_duration_ms: 2000, create_response: true }, 
-                    tools: [{
-                        type: "function",
-                        name: "cerca_nella_mia_memoria_personale",
-                        description: `Cerca nelle conversazioni passate con Alejandro per trovare informazioni specifiche.`,
-                        parameters: {
-                            type: "object",
-                            properties: { termini_di_ricerca: { type: "string", description: `Termini di ricerca specifici.` } },
-                            required: ["termini_di_ricerca"]
-                        }
-                    }]
+                    tools: [{type: "function",name: "cerca_nella_mia_memoria_personale",description: `Cerca nelle conversazioni passate con Alejandro per trovare informazioni specifiche.`,parameters: {type: "object",properties: { termini_di_ricerca: { type: "string", description: `Termini di ricerca specifici.` } },required: ["termini_di_ricerca"]}}]
                 }
             });
+            currentOpenAISessionId = "active_session"; // Segnala che la sessione è attiva
         };
-
-        dc.onmessage = (event) => {
+        dc.onmessage = (event) => { /* ... (identico a prima) ... */ 
             let eventData;
             try {
-                if (typeof event.data === 'string') {
-                    eventData = JSON.parse(event.data);
-                    handleServerEvent(eventData);
-                } else {
-                    console.warn("dc.onmessage: event.data non è una stringa:", event.data);
-                }
+                if (typeof event.data === 'string') { eventData = JSON.parse(event.data); handleServerEvent(eventData); }
+                else { console.warn("dc.onmessage: event.data non è una stringa:", event.data); }
             } catch (e) {
                 console.error("[dc.onmessage catch] Errore:", e);
                 console.error("[dc.onmessage catch] Dati grezzi (se stringa):", typeof event.data === 'string' ? event.data.substring(0, 500) + "..." : "event.data non era stringa");
                 if (statusDiv) statusDiv.textContent = "Errore: Messaggio server non interpretabile.";
             }
         };
-        dc.onclose = () => {
+        dc.onclose = () => { /* ... (identico a prima) ... */ 
             console.log("DEBUG: Data channel chiuso.");
-            if (stopButton.disabled === false) { 
+            if (currentOpenAISessionId) { 
                 console.warn("DEBUG dc.onclose: Data channel chiuso inaspettatamente. Stato WebRTC:", pc?.connectionState);
                 if(!pc || pc.connectionState === "closed" || pc.connectionState === "failed" || pc.connectionState === "disconnected") {
                     if (!saveCurrentSessionHistoryAndStop.called) saveCurrentSessionHistoryAndStop();
                 }
             }
         };
-        dc.onerror = (error) => {
+        dc.onerror = (error) => { /* ... (identico a prima) ... */ 
             console.error("Errore Data channel:", error);
             if (statusDiv) statusDiv.textContent = "Errore critico di connessione.";
-             if (stopButton.disabled === false && !saveCurrentSessionHistoryAndStop.called) {
-                saveCurrentSessionHistoryAndStop();
-             }
+            if (currentOpenAISessionId && !saveCurrentSessionHistoryAndStop.called) { saveCurrentSessionHistoryAndStop(); }
         };
 
-        pc.onconnectionstatechange = () => {
+        pc.onconnectionstatechange = () => { /* ... (identico a prima) ... */
             console.log(`DEBUG: Stato WebRTC: ${pc.connectionState}`);
             if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
                 if (statusDiv) statusDiv.textContent = `Connessione: ${pc.connectionState}.`;
-                if (mediaRecorder && mediaRecorder.state === "recording") {
-                    console.log("DEBUG pc.onconnectionstatechange: MediaRecorder in registrazione, lo fermo.");
-                    mediaRecorder.stop();
-                }
-                if (pc.connectionState !== "closed" && stopButton.disabled === false && !saveCurrentSessionHistoryAndStop.called) {
+                if (mediaRecorder && mediaRecorder.state === "recording") { mediaRecorder.stop(); }
+                if (pc.connectionState !== "closed" && currentOpenAISessionId && !saveCurrentSessionHistoryAndStop.called) {
                     console.log("DEBUG pc.onconnectionstatechange: Triggering saveCurrentSessionHistoryAndStop.");
                     saveCurrentSessionHistoryAndStop();
                 }
@@ -259,16 +175,10 @@ async function startConversation() {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         if (statusDiv) statusDiv.textContent = "Connessione ad OpenAI...";
-
-        const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=${MODEL_NAME}`, {
-            method: "POST", body: offer.sdp, headers: { "Authorization": `Bearer ${ephemeralKeyGlobal}`, "Content-Type": "application/sdp" },
-        });
-        if (!sdpResponse.ok) {
-            const errorText = await sdpResponse.text();
-            console.error(`Errore SDP OpenAI (${sdpResponse.status}): ${errorText}`);
-            throw new Error(`Errore SDP OpenAI (${sdpResponse.status}): ${errorText.substring(0, 200)}`);
-        }
+        const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=${MODEL_NAME}`, { method: "POST", body: offer.sdp, headers: { "Authorization": `Bearer ${ephemeralKeyGlobal}`, "Content-Type": "application/sdp" }, });
+        if (!sdpResponse.ok) { const errorText = await sdpResponse.text(); console.error(`Errore SDP OpenAI (${sdpResponse.status}): ${errorText}`); throw new Error(`Errore SDP OpenAI (${sdpResponse.status}): ${errorText.substring(0, 200)}`);}
         await pc.setRemoteDescription({ type: "answer", sdp: await sdpResponse.text() });
+
     } catch (error) {
         console.error("Errore avvio conversazione:", error);
         if (statusDiv) statusDiv.textContent = `Errore avvio: ${error.message.substring(0,100)}`;
@@ -276,28 +186,21 @@ async function startConversation() {
     }
 }
 
-async function saveCurrentSessionHistoryAndStop() {
-    if (saveCurrentSessionHistoryAndStop.called) {
-        return;
-    }
+async function saveCurrentSessionHistoryAndStop() { /* ... (identico all'ultima versione fornita) ... */
+    if (saveCurrentSessionHistoryAndStop.called) { return; }
     saveCurrentSessionHistoryAndStop.called = true;
-
     console.log("DEBUG (saveCurrentSessionHistoryAndStop): Chiamata.");
     if (mediaRecorder && mediaRecorder.state === "recording") {
         console.log("DEBUG (saveCurrentSessionHistoryAndStop): MediaRecorder era in registrazione, lo fermo.");
-        mediaRecorder.stop(); // Questo triggererà onstop che farà la trascrizione Whisper per l'ultima entry
+        mediaRecorder.stop(); 
     }
-
-    // Diamo tempo a mediaRecorder.onstop di completare (trascrizione Whisper e addTranscript)
-    await new Promise(resolve => setTimeout(resolve, 800)); // Aumentato per dare più tempo a Whisper
-
+    await new Promise(resolve => setTimeout(resolve, 1200)); 
     if (currentConversationHistory.length > 0) {
         if (statusDiv) statusDiv.textContent = "Salvataggio memoria...";
         console.log(`DEBUG (save): Inizio salvataggio di ${currentConversationHistory.length} entries.`);
         let savedCount = 0;
         const historyToSave = [...currentConversationHistory];
         currentConversationHistory = []; 
-
         for (const entry of historyToSave) {
             const isValid = entry && typeof entry.speaker === 'string' && entry.speaker.trim() !== '' && typeof entry.content === 'string' && entry.content.trim() !== '';
             if (!isValid) { console.warn("DEBUG (save): Salto entry non valida:", entry); continue; }
@@ -313,32 +216,34 @@ async function saveCurrentSessionHistoryAndStop() {
         console.log("DEBUG (save): Nessuna entry nella cronologia da salvare.");
         if (statusDiv && !statusDiv.textContent.includes("Errore")) statusDiv.textContent = "Nessuna nuova memoria da salvare.";
     }
-    
     stopConversation(); 
     delete saveCurrentSessionHistoryAndStop.called;
 }
 saveCurrentSessionHistoryAndStop.called = false;
 
-function stopConversation() {
+function stopConversation() { /* ... (identico all'ultima versione fornita) ... */
     console.log("DEBUG (stopConversation): Chiamata.");
+    if (whisperGracePeriodTimer) clearTimeout(whisperGracePeriodTimer);
+    isRecordingForWhisper = false;
+
     if (mediaRecorder && (mediaRecorder.state === "recording" || mediaRecorder.state === "paused")) {
         console.log("DEBUG (stopConversation): MediaRecorder attivo/in pausa, lo fermo.");
         mediaRecorder.stop();
     }
-    if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-        localStream = null;
-        console.log("DEBUG (stopConversation): Tracce microfono fermate.");
+    if (mediaRecorderStream) { // Rilascia lo stream di MediaRecorder
+        mediaRecorderStream.getTracks().forEach(track => track.stop());
+        mediaRecorderStream = null;
+        console.log("DEBUG (stopConversation): Stream MediaRecorder rilasciato.");
     }
-    if (dc && dc.readyState !== "closed") {
-        dc.close();
-        console.log("DEBUG (stopConversation): Data channel chiuso.");
+    if (webrtcStreamForOpenAI) { // Rilascia lo stream di WebRTC
+        webrtcStreamForOpenAI.getTracks().forEach(track => track.stop());
+        webrtcStreamForOpenAI = null;
+        console.log("DEBUG (stopConversation): Stream WebRTC rilasciato.");
     }
+    
+    if (dc && dc.readyState !== "closed") { dc.close(); console.log("DEBUG (stopConversation): Data channel chiuso.");}
     dc = null;
-    if (pc && pc.connectionState !== "closed") {
-        pc.close();
-        console.log("DEBUG (stopConversation): PeerConnection chiuso.");
-    }
+    if (pc && pc.connectionState !== "closed") { pc.close(); console.log("DEBUG (stopConversation): PeerConnection chiuso.");}
     pc = null;
     
     startButton.disabled = false;
@@ -349,80 +254,37 @@ function stopConversation() {
     if (aiAudioPlayer) aiAudioPlayer.srcObject = null;
     currentOpenAISessionId = null;
     audioChunks = [];
-    console.log("DEBUG (stopConversation): Stato ripulito, pronto per nuova sessione.");
+    console.log("DEBUG (stopConversation): Stato ripulito.");
 }
 
-function sendClientEvent(event) { 
-    if (dc && dc.readyState === "open") {
-        dc.send(JSON.stringify(event));
-    } else {
-        console.warn("DEBUG sendClientEvent: Data channel non aperto o non disponibile. Evento non inviato:", event.type);
-    }
+function sendClientEvent(event) { /* ... (identico) ... */ 
+    if (dc && dc.readyState === "open") { dc.send(JSON.stringify(event));}
+    else { console.warn("DEBUG sendClientEvent: Data channel non aperto o non disponibile. Evento non inviato:", event.type);}
 }
-
-function addTranscript(speaker, textContent, itemId) {
+function addTranscript(speaker, textContent, itemId) { /* ... (identico, assicurati che "Sistema" sia nella history) ... */
     const uniqueId = `${speaker.toLowerCase().replace(/\s+/g, '-')}-${itemId || Date.now()}`;
     let div = document.getElementById(uniqueId);
-
     const displayName = (speaker === 'Tu' || speaker === 'Alejandro') ? 'Alejandro' : (speaker === 'AI' || speaker === 'Aiko') ? 'Aiko' : speaker;
     const className = (speaker === 'Tu' || speaker === 'Alejandro') ? 'tu' : (speaker === 'AI' || speaker === 'Aiko') ? 'ai' : 'sistema';
-
-    if (!div) {
-        div = document.createElement('div');
-        div.id = uniqueId;
-        div.className = className;
-        transcriptsDiv.appendChild(div);
-    }
-    
-    const strong = document.createElement('strong');
-    strong.textContent = `${displayName}: `;
-    div.innerHTML = ''; 
-    div.appendChild(strong);
-    div.appendChild(document.createTextNode(textContent));
-
-    transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight;
-    console.log(`DEBUG (addTranscript): Speaker='${displayName}', Content='${textContent.substring(0,50)}...'`);
-
-    // Salva in currentConversationHistory per poi inviare a Supabase
-    if ((speaker === "Tu" || speaker === "AI" || speaker === "Aiko" || speaker === "Alejandro") && typeof textContent === 'string' && textContent.trim() !== '') {
+    if (!div) { div = document.createElement('div'); div.id = uniqueId; div.className = className; transcriptsDiv.appendChild(div); }
+    const strong = document.createElement('strong'); strong.textContent = `${displayName}: `; div.innerHTML = ''; div.appendChild(strong); div.appendChild(document.createTextNode(textContent));
+    transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight; console.log(`DEBUG (addTranscript): Speaker='${displayName}', Content='${textContent.substring(0,50)}...'`);
+    if ((speaker === "Tu" || speaker === "AI" || speaker === "Aiko" || speaker === "Alejandro" || speaker === "Sistema") && typeof textContent === 'string' && textContent.trim() !== '') {
         const speakerForHistory = (speaker === 'Tu' || speaker === 'Alejandro') ? 'Tu' : (speaker === 'AI' || speaker === 'Aiko') ? 'AI' : speaker;
-        
         const lastEntry = currentConversationHistory[currentConversationHistory.length -1];
-        if (lastEntry && lastEntry.itemId === itemId && lastEntry.content === textContent) {
-            // Evita duplicati se addTranscript è chiamato più volte per lo stesso messaggio completo
-        } else {
+        if (lastEntry && lastEntry.itemId === itemId && lastEntry.content === textContent) {} else {
             console.log(`DEBUG (addTranscript): AGGIUNGO A HISTORY (per Supabase): ${speakerForHistory}, "${textContent.substring(0,50)}..."`);
             currentConversationHistory.push({ speaker: speakerForHistory, content: textContent, itemId: itemId });
         }
-    } else {
-        console.warn(`DEBUG (addTranscript): SALTO HISTORY: Speaker ${speaker}, Content "${textContent}"`);
-    }
+    } else { console.warn(`DEBUG (addTranscript): SALTO HISTORY: Speaker ${speaker}, Content "${textContent}"`);}
 }
-
-function appendToTranscript(speaker, textDelta, itemId) { // itemId è il response_id
+function appendToTranscript(speaker, textDelta, itemId) { /* ... (identico) ... */
     const domSpeakerClass = (speaker === "Aiko" || speaker === "AI") ? "ai" : speaker.toLowerCase().replace(/\s+/g, '-');
     const displaySpeakerName = "Aiko"; 
-
-    const domItemId = itemId || 'ai-streaming-response'; 
-    const uniqueId = `${domSpeakerClass}-${domItemId}`;
-
-    let div = document.getElementById(uniqueId);
-    let isNew = false;
-    if (!div) {
-        isNew = true;
-        div = document.createElement('div');
-        div.id = uniqueId;
-        div.className = domSpeakerClass;
-        const strong = document.createElement('strong');
-        strong.textContent = `${displaySpeakerName}: `;
-        div.appendChild(strong);
-        transcriptsDiv.appendChild(div);
-    }
-    
-    div.appendChild(document.createTextNode(textDelta));
-    transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight;
-
-    // Aggiorna currentConversationHistory per le risposte di Aiko
+    const domItemId = itemId || 'ai-streaming-response'; const uniqueId = `${domSpeakerClass}-${domItemId}`;
+    let div = document.getElementById(uniqueId); let isNew = false;
+    if (!div) { isNew = true; div = document.createElement('div'); div.id = uniqueId; div.className = domSpeakerClass; const strong = document.createElement('strong'); strong.textContent = `${displaySpeakerName}: `; div.appendChild(strong); transcriptsDiv.appendChild(div); }
+    div.appendChild(document.createTextNode(textDelta)); transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight;
     if (speaker === "AI" || speaker === "Aiko") {
         const lastEntry = currentConversationHistory.length > 0 ? currentConversationHistory[currentConversationHistory.length - 1] : null;
         if (isNew || !lastEntry || lastEntry.speaker !== "AI" || lastEntry.itemId !== domItemId) { 
@@ -431,46 +293,29 @@ function appendToTranscript(speaker, textDelta, itemId) { // itemId è il respon
                 currentConversationHistory.push({ speaker: "AI", content: textDelta, itemId: domItemId });
             }
         } else if (lastEntry.speaker === "AI" && lastEntry.itemId === domItemId) { 
-            if (typeof textDelta === 'string' && textDelta.trim() !== '') {
-                lastEntry.content += textDelta;
-            }
+            if (typeof textDelta === 'string' && textDelta.trim() !== '') { lastEntry.content += textDelta; }
         }
     }
 }
-
-async function handleFunctionCall(functionCall) {
+async function handleFunctionCall(functionCall) { /* ... (identico) ... */ 
     if (functionCall.name === "cerca_nella_mia_memoria_personale") {
         if (statusDiv) statusDiv.textContent = "Aiko sta cercando nei ricordi...";
         console.log("DEBUG (handleFnCall): cerca_nella_mia_memoria_personale. Args:", functionCall.arguments);
         try {
-            const args = JSON.parse(functionCall.arguments);
-            const searchQuery = args.termini_di_ricerca;
+            const args = JSON.parse(functionCall.arguments); const searchQuery = args.termini_di_ricerca;
             addTranscript("Sistema", `Aiko cerca: "${searchQuery}"...`, `search-${functionCall.call_id}`);
             const searchResponse = await fetch(`${SEARCH_MEMORY_API_ENDPOINT}?query=${encodeURIComponent(searchQuery)}`);
-            let resultsForAI = "Errore durante la ricerca o nessun risultato.";
-            let displayResults = "Errore durante la ricerca.";
-
+            let resultsForAI = "Errore durante la ricerca o nessun risultato."; let displayResults = "Errore durante la ricerca.";
             if (searchResponse.ok) {
-                try {
-                    const searchData = await searchResponse.json();
-                    resultsForAI = searchData.results || "Nessun ricordo trovato per quei termini.";
-                    displayResults = resultsForAI;
-                } catch (parseError) {
-                    console.warn("DEBUG (handleFnCall): Risposta da /api/searchMemory non JSON. Leggo come testo.", parseError);
-                    const textResponse = await searchResponse.text();
-                    resultsForAI = `Risposta testuale (errore?): ${textResponse.substring(0, 200)}`;
-                    displayResults = resultsForAI;
-                }
+                try { const searchData = await searchResponse.json(); resultsForAI = searchData.results || "Nessun ricordo trovato per quei termini."; displayResults = resultsForAI; }
+                catch (parseError) { console.warn("DEBUG (handleFnCall): Risposta da /api/searchMemory non JSON.", parseError); const textResponse = await searchResponse.text(); resultsForAI = `Risposta testuale (errore?): ${textResponse.substring(0, 200)}`; displayResults = resultsForAI;}
             } else {
                 let errorText = `Errore server ${searchResponse.status}`;
-                try { const errorData = await searchResponse.json(); errorText = `Errore ricerca (${searchResponse.status}): ${errorData.error || ""}`; }
-                catch (e) { errorText = `Errore server ${searchResponse.status}: ${await searchResponse.text().catch(() => "")}`; }
+                try { const errorData = await searchResponse.json(); errorText = `Errore ricerca (${searchResponse.status}): ${errorData.error || ""}`; } catch (e) { errorText = `Errore server ${searchResponse.status}: ${await searchResponse.text().catch(() => "")}`; }
                 resultsForAI = errorText; displayResults = resultsForAI;
             }
             addTranscript("Sistema", `Risultati per "${searchQuery}": ${displayResults.substring(0, 200)}${displayResults.length > 200 ? "..." : ""}`, `search-res-${functionCall.call_id}`);
             sendClientEvent({ type: "conversation.item.create", item: { type: "function_call_output", call_id: functionCall.call_id, output: JSON.stringify({ results: resultsForAI }) } });
-            // L'API Realtime dovrebbe generare automaticamente una risposta dopo function_call_output
-            // se create_response è true, o se inviamo response.create (ma ora create_response è true)
             if (statusDiv) statusDiv.textContent = "Aiko ha consultato la memoria.";
         } catch (e) {
             console.error("DEBUG (handleFnCall) Errore:", e);
@@ -482,131 +327,88 @@ async function handleFunctionCall(functionCall) {
 
 function handleServerEvent(event) {
     // console.log(`DEBUG (handleServerEvent): type='${event.type}', obj:`, JSON.parse(JSON.stringify(event)));
-
     switch (event.type) {
-        case "session.created":
-            currentOpenAISessionId = event.session.id;
-            if (statusDiv) statusDiv.textContent = `Aiko è pronta!`;
-            console.log(`DEBUG: Sessione OpenAI creata: ${currentOpenAISessionId}`);
-            break;
-        case "session.updated": 
-            break;
-
+        case "session.created": currentOpenAISessionId = event.session.id; if (statusDiv) statusDiv.textContent = `Aiko è pronta!`; console.log(`DEBUG: Sessione OpenAI creata: ${currentOpenAISessionId}`); break;
+        case "session.updated": break;
         case "input_audio_buffer.speech_started":
             if (statusDiv) statusDiv.textContent = "Ti ascolto...";
-            if (mediaRecorder && mediaRecorder.state === "inactive") {
-                audioChunks = []; 
-                mediaRecorder.start();
-                console.log("DEBUG: MediaRecorder avviato (per Whisper).");
+            clearTimeout(whisperGracePeriodTimer); 
+            if (!isRecordingForWhisper) { // Solo se non stiamo già registrando
+                // Otteniamo un nuovo stream per MediaRecorder ogni volta che l'utente inizia a parlare
+                navigator.mediaDevices.getUserMedia({ audio: true })
+                    .then(stream => {
+                        mediaRecorderStream = stream; // Salva riferimento per stopparlo dopo
+                        audioChunks = [];
+                        const mimeTypes = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', ''];
+                        let supportedMimeType = '';
+                        for (const mimeType of mimeTypes) { if (mimeType === '' || MediaRecorder.isTypeSupported(mimeType)) { supportedMimeType = mimeType; break; }}
+                        mediaRecorder = new MediaRecorder(mediaRecorderStream, supportedMimeType ? { mimeType: supportedMimeType } : {});
+                        mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data);};
+                        mediaRecorder.onstop = async () => { // Questo onstop è SOLO per Whisper
+                            console.log("DEBUG mediaRecorder.onstop (per Whisper, dopo grace period): Chiamato.");
+                            isRecordingForWhisper = false; 
+                            if (mediaRecorderStream) { mediaRecorderStream.getTracks().forEach(track => track.stop()); mediaRecorderStream = null;}
+
+                            const blobMimeType = mediaRecorder.mimeType || supportedMimeType || 'audio/webm';
+                            const audioBlob = new Blob(audioChunks, { type: blobMimeType });
+                            audioChunks = []; 
+                            if (audioBlob.size > 150) { 
+                                const userTranscript = await transcribeUserAudio(audioBlob); 
+                                if (userTranscript && userTranscript.trim() !== '') { addTranscript("Tu", userTranscript, `user-whisper-${Date.now()}`);}
+                                else { addTranscript("Tu", "(Trascrizione Whisper fallita o audio non rilevato)", `user-whisper-fail-${Date.now()}`);}
+                            } else { addTranscript("Tu", "(Audio troppo breve per trascrizione Whisper)", `user-whisper-short-${Date.now()}`);}
+                        };
+                        mediaRecorder.start();
+                        isRecordingForWhisper = true;
+                        console.log("DEBUG: MediaRecorder avviato (per Whisper).");
+                    })
+                    .catch(err => {
+                        console.error("Errore ottenimento stream per MediaRecorder in speech_started:", err);
+                        if (statusDiv) statusDiv.textContent = "Errore microfono (Whisper).";
+                    });
             }
             break;
-
         case "input_audio_buffer.speech_stopped":
-            if (statusDiv) statusDiv.textContent = "Elaboro il tuo audio..."; // Questo è per l'elaborazione Realtime
-            if (mediaRecorder && mediaRecorder.state === "recording") {
-                mediaRecorder.stop(); // Questo triggererà la trascrizione Whisper
-                console.log("DEBUG: MediaRecorder fermato (per Whisper). OpenAI Realtime sta processando l'audio utente.");
-            }
+            if (statusDiv) statusDiv.textContent = "Elaboro il tuo audio..."; 
+            console.log("DEBUG: OpenAI Realtime speech_stopped. Avvio grace period per Whisper.");
+            clearTimeout(whisperGracePeriodTimer); 
+            whisperGracePeriodTimer = setTimeout(() => {
+                if (mediaRecorder && mediaRecorder.state === "recording") {
+                    console.log("DEBUG: Grace period terminato, fermo MediaRecorder per Whisper.");
+                    mediaRecorder.stop(); 
+                }
+            }, 1200); // Grace period (es. 1.2 secondi) - SPERIMENTA CON QUESTO VALORE
             break;
-
-        // La trascrizione interna di OpenAI Realtime per l'utente non viene usata per la UI/memoria,
-        // ma è utile per capire a cosa sta reagendo l'IA.
-        case "conversation.item.input_audio_transcription.delta":
-        case "conversation.item.input_audio_transcription.completed":
-            // console.log(`DEBUG (OpenAI User Audio Event ${event.type}): transcript='${event.transcript}'`);
-            break;
+        case "conversation.item.input_audio_transcription.delta": case "conversation.item.input_audio_transcription.completed": break;
         case "conversation.item.created": 
-            if (event.item && event.item.role === "user") {
-                 console.log(`DEBUG (handleServerEvent - User Item (Realtime API) Created ${event.item.content[0]?.type}):`, event.item);
-            } else if (event.item && event.item.role === "assistant") {
-                 console.log(`DEBUG (handleServerEvent - Assistant Item Created):`, event.item);
-            } else if (event.item && event.item.type === "function_call_output") {
-                 console.log(`DEBUG (handleServerEvent - Function Call Output Item Created):`, event.item);
-            }
+            if (event.item && event.item.role === "user") { console.log(`DEBUG (handleServerEvent - User Item (Realtime API) Created ${event.item.content[0]?.type}):`, event.item); }
+            else if (event.item && event.item.role === "assistant") { console.log(`DEBUG (handleServerEvent - Assistant Item Created):`, event.item); }
+            else if (event.item && event.item.type === "function_call_output") { console.log(`DEBUG (handleServerEvent - Function Call Output Item Created):`, event.item); }
             break;
-        case "conversation.item.updated":
-            break;
-
-        case "response.created":
-            if (statusDiv) statusDiv.textContent = "Aiko sta pensando...";
-            console.log("DEBUG: OpenAI response.created:", event.response.id);
-            break;
-        case "response.audio_transcript.delta": 
-            if (typeof event.delta === 'string') {
-                appendToTranscript("AI", event.delta, event.response_id); 
-            }
-            if (statusDiv && !statusDiv.textContent.startsWith("Aiko risponde...")) {
-                statusDiv.textContent = "Aiko risponde...";
-            }
-            break;
-        case "response.done":
-            console.log("DEBUG: OpenAI response.done:", event.response.id, "Output:", event.response.output);
-            if (event.response.output && event.response.output[0]?.type === "function_call") {
-                handleFunctionCall(event.response.output[0]);
-            }
-            const hasAudioOutputDone = event.response.output?.some(part => part.type === 'audio');
-            if (!hasAudioOutputDone && (statusDiv.textContent.startsWith("Aiko sta pensando...") || statusDiv.textContent.startsWith("Aiko risponde..."))) {
-                statusDiv.textContent = "Aiko ha finito.";
-            }
-            break;
-        case "error":
-            console.error("Errore OpenAI Realtime:", JSON.stringify(event, null, 2));
-            let errorMessage = "Errore OpenAI sconosciuto";
-            let errorCode = "unknown_error";
-            if (event.error) { 
-                errorMessage = event.error.message || JSON.stringify(event.error);
-                errorCode = event.error.code || errorCode;
-            } else { 
-                errorMessage = event.message || errorMessage;
-                errorCode = event.code || errorCode;
-            }
+        case "conversation.item.updated": break;
+        case "response.created": if (statusDiv) statusDiv.textContent = "Aiko sta pensando..."; console.log("DEBUG: OpenAI response.created:", event.response.id); break;
+        case "response.audio_transcript.delta": if (typeof event.delta === 'string') { appendToTranscript("AI", event.delta, event.response_id); } if (statusDiv && !statusDiv.textContent.startsWith("Aiko risponde...")) { statusDiv.textContent = "Aiko risponde..."; } break;
+        case "response.done": console.log("DEBUG: OpenAI response.done:", event.response.id, "Output:", event.response.output); if (event.response.output && event.response.output[0]?.type === "function_call") { handleFunctionCall(event.response.output[0]); } const hasAudioOutputDone = event.response.output?.some(part => part.type === 'audio'); if (!hasAudioOutputDone && (statusDiv.textContent.startsWith("Aiko sta pensando...") || statusDiv.textContent.startsWith("Aiko risponde..."))) { statusDiv.textContent = "Aiko ha finito."; } break;
+        case "error": /* ... (gestione errori invariata) ... */
+            console.error("Errore OpenAI Realtime:", JSON.stringify(event, null, 2)); let errorMessage = "Errore OpenAI sconosciuto"; let errorCode = "unknown_error";
+            if (event.error) { errorMessage = event.error.message || JSON.stringify(event.error); errorCode = event.error.code || errorCode; } else { errorMessage = event.message || errorMessage; errorCode = event.code || errorCode; }
             if (statusDiv) statusDiv.textContent = `Errore OpenAI: ${errorMessage.substring(0, 60)}`;
-            
-            const criticalErrorCodes = ["session_expired", "token_expired", "session_not_found", 
-                                      "connection_closed", "session_failed", "invalid_request_error",
-                                      "authentication_error", "api_error", "invalid_api_key", "rate_limit_exceeded"];
-            if (criticalErrorCodes.includes(errorCode) && !saveCurrentSessionHistoryAndStop.called) {
-                if (statusDiv) statusDiv.textContent += " Sessione terminata o errore grave. Provo a salvare.";
-                saveCurrentSessionHistoryAndStop();
-            }
+            const criticalErrorCodes = ["session_expired", "token_expired", "session_not_found", "connection_closed", "session_failed", "invalid_request_error", "authentication_error", "api_error", "invalid_api_key", "rate_limit_exceeded"];
+            if (criticalErrorCodes.includes(errorCode) && !saveCurrentSessionHistoryAndStop.called) { if (statusDiv) statusDiv.textContent += " Sessione terminata o errore grave. Provo a salvare."; saveCurrentSessionHistoryAndStop(); }
             break;
-        
-        case "input_audio_buffer.committed":
-        case "rate_limits.updated":
-        case "response.output_item.added":
-        case "response.content_part.added":
-        case "response.audio.done":
-        case "response.audio_transcript.done":
-        case "response.content_part.done":
-        case "response.output_item.done":
-        case "output_audio_buffer.started":
-            break;
-        case "output_audio_buffer.stopped":
-            if (statusDiv && (statusDiv.textContent.startsWith("Aiko risponde...") || statusDiv.textContent.startsWith("Aiko ha finito di generare il testo."))) {
-                statusDiv.textContent = "Aiko ha finito di parlare.";
-            }
-            break;
-
-        default:
-             console.log(`DEBUG (handleServerEvent - EVENTO SCONOSCIUTO O NON GESTITO): type='${event.type}'. obj:`, JSON.parse(JSON.stringify(event)));
-            break;
+        case "input_audio_buffer.committed": case "rate_limits.updated": case "response.output_item.added": case "response.content_part.added": case "response.audio.done": case "response.audio_transcript.done": case "response.content_part.done": case "response.output_item.done": case "output_audio_buffer.started": case "response.function_call_arguments.delta": case "response.function_call_arguments.done": break;
+        case "output_audio_buffer.stopped": if (statusDiv && (statusDiv.textContent.startsWith("Aiko risponde...") || statusDiv.textContent.startsWith("Aiko ha finito di generare il testo."))) { statusDiv.textContent = "Aiko ha finito di parlare."; } break;
+        default: console.log(`DEBUG (handleServerEvent - EVENTO SCONOSCIUTO O NON GESTITO): type='${event.type}'. obj:`, JSON.parse(JSON.stringify(event))); break;
     }
 }
 
 // --- Event Listeners UI ---
+startButton.addEventListener('click', startConversation);
 stopButton.addEventListener('click', () => {
     console.log("DEBUG: Pulsante TERMINA premuto.");
     if (statusDiv) statusDiv.textContent = "Chiusura conversazione e salvataggio...";
-    if (!saveCurrentSessionHistoryAndStop.called) {
-        saveCurrentSessionHistoryAndStop();
-    }
+    if (!saveCurrentSessionHistoryAndStop.called) { saveCurrentSessionHistoryAndStop(); }
 });
-startButton.addEventListener('click', startConversation);
-
-window.addEventListener('beforeunload', (event) => {
-    if (stopButton.disabled === false) { 
-        console.log("DEBUG: Evento beforeunload, conversazione attiva.");
-    }
-});
+window.addEventListener('beforeunload', (event) => { if (stopButton.disabled === false) { console.log("DEBUG: Evento beforeunload, conversazione attiva."); }});
 
 stopConversation();
