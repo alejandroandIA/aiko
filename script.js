@@ -22,7 +22,7 @@ let mediaRecorder;
 let audioChunks = [];
 let whisperGracePeriodTimer = null;
 let isRecordingForWhisper = false;
-
+let lastTranscriptionAttemptPromise = Promise.resolve(); // Aggiunta per tracciare l'ultima trascrizione
 
 let currentConversationHistory = [];
 
@@ -191,15 +191,26 @@ async function startConversation() {
     }
 }
 
-async function saveCurrentSessionHistoryAndStop() { /* ... (identico all'ultima versione fornita) ... */
+async function saveCurrentSessionHistoryAndStop() {
     if (saveCurrentSessionHistoryAndStop.called) { return; }
     saveCurrentSessionHistoryAndStop.called = true;
     console.log("DEBUG (saveCurrentSessionHistoryAndStop): Chiamata.");
     if (mediaRecorder && mediaRecorder.state === "recording") {
         console.log("DEBUG (saveCurrentSessionHistoryAndStop): MediaRecorder era in registrazione, lo fermo.");
-        mediaRecorder.stop(); 
+        mediaRecorder.stop(); // Questo triggera onstop, che aggiornerà lastTranscriptionAttemptPromise
     }
-    await new Promise(resolve => setTimeout(resolve, 1200)); 
+
+    // Attendi il completamento dell'ultima trascrizione Whisper prima di procedere.
+    // Rimuovi il vecchio setTimeout.
+    // await new Promise(resolve => setTimeout(resolve, 1200)); 
+    try {
+        console.log("DEBUG (saveCurrentSessionHistoryAndStop): Attendo ultima potenziale trascrizione Whisper.");
+        await lastTranscriptionAttemptPromise;
+    } catch (e) {
+        console.error("DEBUG (saveCurrentSessionHistoryAndStop): Errore durante attesa ultima trascrizione Whisper:", e);
+        // Nonostante l'errore, proviamo a salvare quello che abbiamo e a chiudere.
+    }
+    
     if (currentConversationHistory.length > 0) {
         if (statusDiv) statusDiv.textContent = "Salvataggio memoria...";
         console.log(`DEBUG (save): Inizio salvataggio di ${currentConversationHistory.length} entries.`);
@@ -358,10 +369,19 @@ function handleServerEvent(event) {
                             const audioBlob = new Blob(audioChunks, { type: blobMimeType });
                             audioChunks = []; 
                             if (audioBlob.size > 150) { 
-                                const userTranscript = await transcribeUserAudio(audioBlob); 
-                                if (userTranscript && userTranscript.trim() !== '') { addTranscript("Tu", userTranscript, `user-whisper-${Date.now()}`);}
-                                else { addTranscript("Tu", "(Trascrizione Whisper fallita o audio non rilevato)", `user-whisper-fail-${Date.now()}`);}
-                            } else { addTranscript("Tu", "(Audio troppo breve per trascrizione Whisper)", `user-whisper-short-${Date.now()}`);}
+                                // Aggiorna lastTranscriptionAttemptPromise con la nuova operazione di trascrizione
+                                lastTranscriptionAttemptPromise = transcribeUserAudio(audioBlob)
+                                    .then(userTranscript => {
+                                        if (userTranscript && userTranscript.trim() !== '') { addTranscript("Tu", userTranscript, `user-whisper-${Date.now()}`);}
+                                        else { addTranscript("Tu", "(Trascrizione Whisper fallita o audio non rilevato)", `user-whisper-fail-${Date.now()}`);}
+                                    }).catch(e => {
+                                        console.error("Errore trascrizione in onstop handler:", e);
+                                        addTranscript("Tu", "(Errore grave durante trascrizione Whisper)", `user-whisper-error-${Date.now()}`);
+                                    });
+                            } else { 
+                                addTranscript("Tu", "(Audio troppo breve per trascrizione Whisper)", `user-whisper-short-${Date.now()}`);
+                                lastTranscriptionAttemptPromise = Promise.resolve(); // Resetta a una promise risolta se non si trascrive
+                            }
                         };
                         mediaRecorder.start();
                         isRecordingForWhisper = true;
