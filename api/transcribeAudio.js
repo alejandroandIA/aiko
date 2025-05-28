@@ -50,24 +50,36 @@ export default async function handler(req, res) {
         console.log(`DEBUG api/transcribeAudio: Audio buffer ricevuto, lunghezza: ${audioBuffer.length}`);
 
         const clientContentType = req.headers['content-type'] || 'audio/webm';
-        let filename = 'audio.webm'; // Default, Whisper la supporta
-        if (clientContentType.includes('mp4') || clientContentType.includes('m4a')) filename = 'audio.m4a';
-        else if (clientContentType.includes('mpeg') || clientContentType.includes('mp3')) filename = 'audio.mp3';
-        else if (clientContentType.includes('wav')) filename = 'audio.wav';
-        else if (clientContentType.includes('ogg')) filename = 'audio.ogg';
-        // Aggiungi altri formati se necessario, webm è un buon default
+        let filename = 'audio.webm'; // Default se nessun altro match
+
+        // Logica filename aggiornata
+        if (clientContentType.includes('mp4')) { // Se il client invia audio/mp4
+            filename = 'audio.mp4'; // Usa .mp4 come estensione per Whisper
+        } else if (clientContentType.includes('m4a')) { // Per file esplicitamente m4a
+            filename = 'audio.m4a';
+        } else if (clientContentType.includes('mpeg') || clientContentType.includes('mp3')) {
+            filename = 'audio.mp3';
+        } else if (clientContentType.includes('wav')) {
+            filename = 'audio.wav';
+        } else if (clientContentType.includes('ogg')) { // oga è spesso usato per ogg vorbis
+            filename = 'audio.ogg';
+        } else if (clientContentType.includes('webm')) { // Assicurati che webm sia gestito
+             filename = 'audio.webm';
+        }
+        // Se hai altri formati specifici che MediaRecorder potrebbe produrre, aggiungili.
+
         console.log(`DEBUG api/transcribeAudio: Content-Type client: ${clientContentType}, Filename per Whisper: ${filename}`);
 
         const form = new FormData();
         form.append('file', audioBuffer, {
-            filename: filename,
-            contentType: clientContentType,
+            filename: filename, // Nome file corretto
+            contentType: clientContentType, // Questo è più per informazione, Whisper si basa sull'estensione
         });
         form.append('model', 'whisper-1');
         // NON specificare 'language' per la rilevazione automatica
         // form.append('response_format', 'verbose_json'); // Utile per ottenere la lingua rilevata
 
-        console.log(`DEBUG api/transcribeAudio: FormData preparato. Invio a OpenAI Whisper API per trascrizione con rilevamento automatico lingua...`);
+        console.log(`DEBUG api/transcribeAudio: FormData preparato. Invio a OpenAI Whisper API...`);
 
         const whisperResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
             method: "POST",
@@ -82,7 +94,7 @@ export default async function handler(req, res) {
 
         if (!whisperResponse.ok) {
             console.error(`Errore dall'API Whisper: ${whisperResponse.status} ${whisperResponse.statusText}`);
-            console.error("Dettagli errore Whisper:", responseBodyText);
+            console.error("Dettagli errore Whisper:", responseBodyText); // Questo mostrerà l'errore di formato
             let errorDetails = `Errore API Whisper (${whisperResponse.status})`;
             try {
                 const errorData = JSON.parse(responseBodyText);
@@ -97,15 +109,11 @@ export default async function handler(req, res) {
             console.error("Risposta da Whisper non contiene il campo 'text' atteso:", whisperData);
             return res.status(500).json({ error: "Formato risposta trascrizione inatteso da OpenAI." });
         }
-
-        // Se vuoi vedere la lingua rilevata (richiede response_format: 'verbose_json')
-        // if (whisperData.language) {
-        //     console.log(`DEBUG api/transcribeAudio: Lingua rilevata da Whisper: ${whisperData.language}`);
-        // }
+        
         console.log("DEBUG api/transcribeAudio: Trascrizione ricevuta da Whisper:", whisperData.text);
         
         res.setHeader('Access-Control-Allow-Origin', '*');
-        return res.status(200).json({ transcript: whisperData.text /*, detected_language: whisperData.language (se usi verbose_json) */ });
+        return res.status(200).json({ transcript: whisperData.text });
 
     } catch (error) {
         console.error("Errore generico nella serverless function api/transcribeAudio.js:", error);
