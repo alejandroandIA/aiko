@@ -83,7 +83,7 @@ async function transcribeUserAudio(audioBlob) {
         });
 
         const responseBodyText = await response.text();
-        // console.log("DEBUG transcribeUserAudio: Risposta grezza da /api/transcribeAudio:", responseBodyText); // Può essere molto verboso
+        // console.log("DEBUG transcribeUserAudio: Risposta grezza da /api/transcribeAudio:", responseBodyText); 
 
         if (!response.ok) {
             let errorDetails = `Errore ${response.status}: ${responseBodyText}`;
@@ -97,7 +97,6 @@ async function transcribeUserAudio(audioBlob) {
         }
         const data = JSON.parse(responseBodyText);
         console.log("DEBUG: Trascrizione da Whisper ricevuta:", data.transcript);
-        // if (statusDiv) statusDiv.textContent = "Audio trascritto!"; // Lo stato cambia troppo velocemente, meglio gestirlo altrove
         return data.transcript;
     } catch (error) {
         console.error("Errore fetch /api/transcribeAudio:", error);
@@ -175,12 +174,10 @@ async function startConversation() {
                     } else {
                         console.warn("DEBUG script.js: Trascrizione da Whisper vuota o fallita, o audio troppo breve dopo trim.");
                         addTranscript("Tu", "(Trascrizione audio fallita o audio non rilevato)", `user-fail-${Date.now()}`);
-                        // Se la trascrizione fallisce, non chiediamo ad Aiko di rispondere, il che è corretto.
                     }
                 } else {
                      console.log("DEBUG script.js: AudioBlob troppo piccolo (size:", audioBlob.size, "), non invio a Whisper.");
                      addTranscript("Tu", "(Audio troppo breve per trascrizione)", `user-short-${Date.now()}`);
-                     // Se l'audio è troppo breve, non chiediamo ad Aiko di rispondere.
                 }
             };
 
@@ -194,7 +191,7 @@ async function startConversation() {
         pc.ontrack = (event) => {
             if (event.streams?.[0]) {
                 aiAudioPlayer.srcObject = event.streams[0];
-                aiAudioPlayer.play().catch(e => {/* console.warn("Autoplay AI audio bloccato", e) */});
+                aiAudioPlayer.play().catch(e => {});
             }
         };
         if (localStream) {
@@ -208,7 +205,6 @@ async function startConversation() {
             sendClientEvent({
                 type: "session.update",
                 session: {
-                    // *** MODIFICA CHIAVE QUI ***
                     turn_detection: { type: "server_vad", threshold: 0.5, silence_duration_ms: 1800, create_response: false }, 
                     tools: [{
                         type: "function",
@@ -293,7 +289,6 @@ async function startConversation() {
 
 async function saveCurrentSessionHistoryAndStop() {
     if (saveCurrentSessionHistoryAndStop.called) {
-        // console.log("DEBUG (saveCurrentSessionHistoryAndStop): Chiamata già in corso, esco.");
         return;
     }
     saveCurrentSessionHistoryAndStop.called = true;
@@ -318,7 +313,7 @@ async function saveCurrentSessionHistoryAndStop() {
             if (!isValid) { console.warn("DEBUG (save): Salto entry non valida:", entry); continue; }
             try {
                 const resp = await fetch(SAVE_MEMORY_API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entry) });
-                if (resp.ok) { savedCount++; /* const d = await resp.json(); console.log(`DEBUG (save): Entry salvata. Server: ${d.message}`); */ }
+                if (resp.ok) { savedCount++; }
                 else { const errD = await resp.json().catch(() => ({error: "Errore parsing risposta server"})); console.error(`DEBUG (save): Errore server (${resp.status}):`, errD, "Entry:", entry); }
             } catch (err) { console.error("DEBUG (save): Errore fetch salvataggio:", err, "Entry:", entry); }
         }
@@ -329,10 +324,6 @@ async function saveCurrentSessionHistoryAndStop() {
         if (statusDiv && !statusDiv.textContent.includes("Errore")) statusDiv.textContent = "Nessuna nuova memoria da salvare.";
     }
     
-    // stopConversation() viene chiamato dopo che il salvataggio è completato o se non c'è nulla da salvare.
-    // Ma il flag .called deve essere resettato *dopo* che stopConversation ha fatto il suo lavoro,
-    // o meglio, stopConversation dovrebbe essere l'ultima cosa.
-    // Chiamiamo stopConversation e poi resettiamo il flag.
     stopConversation(); 
     delete saveCurrentSessionHistoryAndStop.called;
 }
@@ -350,8 +341,6 @@ function stopConversation() {
         console.log("DEBUG (stopConversation): Tracce microfono fermate.");
     }
     if (dc && dc.readyState !== "closed") {
-        // Non inviare "session.close" se l'API non lo supporta o se causa problemi.
-        // dc.send(JSON.stringify({ type: "session.close" })); 
         dc.close();
         console.log("DEBUG (stopConversation): Data channel chiuso.");
     }
@@ -375,7 +364,6 @@ function stopConversation() {
 
 function sendClientEvent(event) { 
     if (dc && dc.readyState === "open") {
-        // console.log("DEBUG sendClientEvent:", JSON.stringify(event).substring(0,150) + "...");
         dc.send(JSON.stringify(event));
     } else {
         console.warn("DEBUG sendClientEvent: Data channel non aperto o non disponibile. Evento non inviato:", event.type);
@@ -398,7 +386,7 @@ function addTranscript(speaker, textContent, itemId) {
     
     const strong = document.createElement('strong');
     strong.textContent = `${displayName}: `;
-    div.innerHTML = ''; // Pulisci prima di aggiungere
+    div.innerHTML = ''; 
     div.appendChild(strong);
     div.appendChild(document.createTextNode(textContent));
 
@@ -409,12 +397,10 @@ function addTranscript(speaker, textContent, itemId) {
         const speakerForHistory = (speaker === 'Tu' || speaker === 'Alejandro') ? 'Tu' : (speaker === 'AI' || speaker === 'Aiko') ? 'AI' : speaker;
         
         const lastEntry = currentConversationHistory[currentConversationHistory.length -1];
-        // Evita di aggiungere un messaggio identico se l'ID è lo stesso (raro per addTranscript ma cautela)
         if (lastEntry && lastEntry.itemId === itemId && lastEntry.content === textContent) {
-            // console.log("DEBUG (addTranscript): Evitato duplicato esatto con lo stesso itemId per la history.");
         } else {
             console.log(`DEBUG (addTranscript): AGGIUNGO A HISTORY: ${speakerForHistory}, "${textContent.substring(0,50)}..."`);
-            currentConversationHistory.push({ speaker: speakerForHistory, content: textContent, itemId: itemId }); // Aggiunto itemId per potenziale deduplica
+            currentConversationHistory.push({ speaker: speakerForHistory, content: textContent, itemId: itemId });
         }
     } else {
         console.warn(`DEBUG (addTranscript): SALTO HISTORY: Speaker ${speaker}, Content "${textContent}"`);
@@ -425,7 +411,7 @@ function appendToTranscript(speaker, textDelta, itemId) {
     const domSpeakerClass = (speaker === "Aiko" || speaker === "AI") ? "ai" : speaker.toLowerCase().replace(/\s+/g, '-');
     const displaySpeakerName = "Aiko"; 
 
-    const domItemId = itemId || 'ai-streaming-response';
+    const domItemId = itemId || 'ai-streaming-response'; // Questo itemId è il response_id
     const uniqueId = `${domSpeakerClass}-${domItemId}`;
 
     let div = document.getElementById(uniqueId);
@@ -511,7 +497,6 @@ function handleServerEvent(event) {
             console.log(`DEBUG: Sessione OpenAI creata: ${currentOpenAISessionId}`);
             break;
         case "session.updated": 
-            // console.log("DEBUG: Sessione OpenAI aggiornata:", event.session);
             break;
 
         case "input_audio_buffer.speech_started":
@@ -533,7 +518,6 @@ function handleServerEvent(event) {
 
         case "conversation.item.input_audio_transcription.delta":
         case "conversation.item.input_audio_transcription.completed":
-            // Ignoriamo la trascrizione interna di OpenAI Realtime
             break;
         case "conversation.item.created": 
             if (event.item && event.item.role === "user") {
@@ -545,7 +529,6 @@ function handleServerEvent(event) {
             }
             break;
         case "conversation.item.updated":
-            // console.log(`DEBUG (handleServerEvent - Item Updated):`, event.item);
             break;
 
         case "response.created":
@@ -554,7 +537,9 @@ function handleServerEvent(event) {
             break;
         case "response.audio_transcript.delta": 
             if (typeof event.delta === 'string') {
-                appendToTranscript("AI", event.delta, event.response.id); // Usa event.response.id per coerenza
+                // *** CORREZIONE QUI ***
+                // Per gli eventi delta, response_id è una proprietà diretta dell'evento.
+                appendToTranscript("AI", event.delta, event.response_id); 
             }
             if (statusDiv && !statusDiv.textContent.startsWith("Aiko risponde...")) {
                 statusDiv.textContent = "Aiko risponde...";
@@ -565,12 +550,9 @@ function handleServerEvent(event) {
             if (event.response.output && event.response.output[0]?.type === "function_call") {
                 handleFunctionCall(event.response.output[0]);
             }
-            // Lo stato "Aiko ha finito di parlare" è gestito da output_audio_buffer.stopped
-            // o se non c'è audio, potrebbe essere necessario aggiornarlo qui.
-            // Verifichiamo se la risposta non ha audio e se Aiko stava "pensando" o "rispondendo"
-            const hasAudioOutput = event.response.output?.some(part => part.type === 'audio');
-            if (!hasAudioOutput && (statusDiv.textContent.startsWith("Aiko sta pensando...") || statusDiv.textContent.startsWith("Aiko risponde..."))) {
-                statusDiv.textContent = "Aiko ha finito."; // O "Pronto." se si preferisce.
+            const hasAudioOutputDone = event.response.output?.some(part => part.type === 'audio');
+            if (!hasAudioOutputDone && (statusDiv.textContent.startsWith("Aiko sta pensando...") || statusDiv.textContent.startsWith("Aiko risponde..."))) {
+                statusDiv.textContent = "Aiko ha finito.";
             }
             break;
         case "error":
@@ -595,7 +577,6 @@ function handleServerEvent(event) {
             }
             break;
         
-        // Eventi informativi
         case "input_audio_buffer.committed":
         case "rate_limits.updated":
         case "response.output_item.added":
@@ -605,10 +586,8 @@ function handleServerEvent(event) {
         case "response.content_part.done":
         case "response.output_item.done":
         case "output_audio_buffer.started":
-             // console.log(`DEBUG (handleServerEvent - Evento informativo): type='${event.type}'.`);
             break;
         case "output_audio_buffer.stopped":
-            // console.log(`DEBUG (handleServerEvent - Evento informativo): type='${event.type}'.`);
             if (statusDiv && (statusDiv.textContent.startsWith("Aiko risponde...") || statusDiv.textContent.startsWith("Aiko ha finito di generare il testo."))) {
                 statusDiv.textContent = "Aiko ha finito di parlare.";
             }
@@ -633,10 +612,7 @@ startButton.addEventListener('click', startConversation);
 window.addEventListener('beforeunload', (event) => {
     if (stopButton.disabled === false) { 
         console.log("DEBUG: Evento beforeunload, conversazione attiva.");
-        // Non si possono fare operazioni asincrone affidabili qui.
-        // La logica di salvataggio è principalmente legata al bottone stop o a errori/disconnessioni.
     }
 });
 
-// Inizializza lo stato dei pulsanti
 stopConversation();
