@@ -387,8 +387,40 @@ function handleServerEvent(event) {
             break;
         case "conversation.item.updated": break;
         case "response.created": if (statusDiv) statusDiv.textContent = "Aiko sta pensando..."; console.log("DEBUG: OpenAI response.created:", event.response.id); break;
-        case "response.audio_transcript.delta": if (typeof event.delta === 'string') { appendToTranscript("AI", event.delta, event.response_id); } if (statusDiv && !statusDiv.textContent.startsWith("Aiko risponde...")) { statusDiv.textContent = "Aiko risponde..."; } break;
-        case "response.done": console.log("DEBUG: OpenAI response.done:", event.response.id, "Output:", event.response.output); if (event.response.output && event.response.output[0]?.type === "function_call") { handleFunctionCall(event.response.output[0]); } const hasAudioOutputDone = event.response.output?.some(part => part.type === 'audio'); if (!hasAudioOutputDone && (statusDiv.textContent.startsWith("Aiko sta pensando...") || statusDiv.textContent.startsWith("Aiko risponde..."))) { statusDiv.textContent = "Aiko ha finito."; } break;
+        case "response.audio_transcript.delta": 
+            if (typeof event.delta === 'string') { 
+                // NON FACCIAMO NULLA CON LA TRASCRIZIONE REALTIME DELL'UTENTE PER ORA
+                // Verrà gestita dalla trascrizione Whisper separata per maggiore accuratezza
+                // console.log("DEBUG: OpenAI response.audio_transcript.delta (User audio real-time):", event.delta);
+                // Se si volesse visualizzarla (ma non salvarla nella history principale):
+                // appendToTranscript("Tu", event.delta, `user-realtime-${event.response_id || Date.now()}`); 
+            }
+            // Lo status "Aiko risponde..." dovrebbe essere gestito quando arriva il testo effettivo dell'AI
+            // if (statusDiv && !statusDiv.textContent.startsWith("Aiko risponde...")) { statusDiv.textContent = "Aiko risponde..."; } 
+            break;
+        case "response.done": 
+            console.log("DEBUG: OpenAI response.done:", event.response.id, "Output:", event.response.output); 
+            if (event.response.output && event.response.output[0]?.type === "function_call") { 
+                handleFunctionCall(event.response.output[0]); 
+            }
+            const hasTextOutput = event.response.output?.some(part => part.type === 'text');
+            const hasAudioOutput = event.response.output?.some(part => part.type === 'audio');
+
+            if (hasTextOutput || hasAudioOutput) {
+                 // Non impostare "Aiko ha finito" qui se c'è output audio, 
+                 // perché output_audio_buffer.stopped lo gestirà.
+                 // Se c'è solo testo (o testo e function call), allora è ok.
+                if (!hasAudioOutput && (statusDiv.textContent.startsWith("Aiko sta pensando...") || statusDiv.textContent.startsWith("Aiko risponde..."))) {
+                    statusDiv.textContent = "Aiko ha finito.";
+                }
+            } else if (!event.response.output?.some(part => part.type === 'function_call')) {
+                // Se non c'è NESSUN output (né testo, né audio, né function call)
+                // E non stavamo già gestendo una function call (che ha i suoi messaggi di stato)
+                if (statusDiv.textContent.startsWith("Aiko sta pensando...") || statusDiv.textContent.startsWith("Aiko risponde...")) {
+                    statusDiv.textContent = "Aiko ha concluso (nessuna risposta testuale/audio diretta).";
+                }
+            }
+            break;
         case "error": /* ... (gestione errori invariata) ... */
             console.error("Errore OpenAI Realtime:", JSON.stringify(event, null, 2)); let errorMessage = "Errore OpenAI sconosciuto"; let errorCode = "unknown_error";
             if (event.error) { errorMessage = event.error.message || JSON.stringify(event.error); errorCode = event.error.code || errorCode; } else { errorMessage = event.message || errorMessage; errorCode = event.code || errorCode; }
@@ -397,7 +429,26 @@ function handleServerEvent(event) {
             if (criticalErrorCodes.includes(errorCode) && !saveCurrentSessionHistoryAndStop.called) { if (statusDiv) statusDiv.textContent += " Sessione terminata o errore grave. Provo a salvare."; saveCurrentSessionHistoryAndStop(); }
             break;
         case "input_audio_buffer.committed": case "rate_limits.updated": case "response.output_item.added": case "response.content_part.added": case "response.audio.done": case "response.audio_transcript.done": case "response.content_part.done": case "response.output_item.done": case "output_audio_buffer.started": case "response.function_call_arguments.delta": case "response.function_call_arguments.done": break;
-        case "output_audio_buffer.stopped": if (statusDiv && (statusDiv.textContent.startsWith("Aiko risponde...") || statusDiv.textContent.startsWith("Aiko ha finito di generare il testo."))) { statusDiv.textContent = "Aiko ha finito di parlare."; } break;
+        case "output_audio_buffer.stopped": 
+            if (statusDiv && (statusDiv.textContent.startsWith("Aiko risponde...") || statusDiv.textContent.startsWith("Aiko ha finito.") || statusDiv.textContent.startsWith("Aiko ha finito di generare il testo.") )) { // Aggiunto "Aiko ha finito."
+                statusDiv.textContent = "Aiko ha finito di parlare."; 
+            } 
+            break;
+        case "response.output_item.added": 
+            if (event.item?.type === "text") {
+                // Questo evento potrebbe essere usato per iniziare a mostrare che Aiko risponde,
+                // se `response.audio_transcript.delta` viene rimosso come trigger di stato.
+                if (statusDiv && statusDiv.textContent.startsWith("Aiko sta pensando...")) {
+                     statusDiv.textContent = "Aiko risponde..."; 
+                }
+            }
+            break; 
+        case "response.content_part.added": 
+            if (event.part?.type === "text" && typeof event.part.text === 'string') {
+                appendToTranscript("AI", event.part.text, event.response_id);
+            }
+            break;
+        case "response.audio.done": case "response.audio_transcript.done": case "response.content_part.done": case "response.output_item.done": case "output_audio_buffer.started": case "response.function_call_arguments.delta": case "response.function_call_arguments.done": break;
         default: console.log(`DEBUG (handleServerEvent - EVENTO SCONOSCIUTO O NON GESTITO): type='${event.type}'. obj:`, JSON.parse(JSON.stringify(event))); break;
     }
 }
