@@ -1,5 +1,5 @@
 // api/session.js
-import { getBaseInstructions, AI_NAME, USER_NAME } from '../src/config/aiConfig.js'; // Assicurati che il percorso sia corretto!
+import { getBaseInstructions, AI_NAME, USER_NAME } from '../src/config/aiConfig.mjs'; // Assicurati che il percorso sia corretto!
 
 export default async function handler(req, res) {
     if (req.method === 'OPTIONS') {

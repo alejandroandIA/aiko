@@ -1,6 +1,6 @@
 // api/generateContextSummary.js
 import { createClient } from '@supabase/supabase-js';
-import { USER_NAME, AI_NAME } from '../src/config/aiConfig.js';
+import { USER_NAME, AI_NAME } from '../src/config/aiConfig.mjs';
 
 export default async function handler(req, res) {
     if (req.method !== 'GET') {
