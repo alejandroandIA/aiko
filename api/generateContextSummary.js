@@ -75,10 +75,6 @@ Appunti per Aiko su Alejandro (massimo 200-250 parole, focalizzati su ci√≤ che √
         const summaryData = await openaiSummaryResponse.json();
         let summaryText = summaryData.choices?.[0]?.message?.content?.trim() || "";
 
-        if (summaryText.toLowerCase().includes("nessun dettaglio") || summaryText.toLowerCase().includes("nessuna informazione")) {
-            summaryText = ""; // Non passare un riassunto vuoto o negativo
-        }
-
         console.log("generateContextSummary: Riassunto/Appunti generati:", summaryText);
         res.setHeader('Access-Control-Allow-Origin', '*');
         return res.status(200).json({ summary: summaryText });

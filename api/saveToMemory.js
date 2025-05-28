@@ -34,7 +34,8 @@ export default async function handler(req, res) {
 
         const { data, error } = await supabase
             .from('memoria_chat')
-            .insert([{ speaker: String(speaker).trim(), content: String(content).trim() }]);
+            .insert([{ speaker: String(speaker).trim(), content: String(content).trim() }])
+            .select();
 
         if (error) {
             console.error('Errore Supabase (insert) api/saveToMemory:', error);
