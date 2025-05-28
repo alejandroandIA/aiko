@@ -368,6 +368,10 @@ function handleServerEvent(event) {
                             const blobMimeType = mediaRecorder.mimeType || supportedMimeType || 'audio/webm';
                             const audioBlob = new Blob(audioChunks, { type: blobMimeType });
                             audioChunks = []; 
+
+                            // NUOVO LOG QUI
+                            console.log("DEBUG mediaRecorder.onstop: audioBlob.size = " + audioBlob.size + ", audioBlob.type = " + audioBlob.type);
+
                             if (audioBlob.size > 1000) { // Aumentato da 150 a 1000 byte
                                 // Aggiorna lastTranscriptionAttemptPromise con la nuova operazione di trascrizione
                                 lastTranscriptionAttemptPromise = transcribeUserAudio(audioBlob)
