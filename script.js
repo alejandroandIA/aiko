@@ -368,12 +368,12 @@ function handleServerEvent(event) {
                             const blobMimeType = mediaRecorder.mimeType || supportedMimeType || 'audio/webm';
                             const audioBlob = new Blob(audioChunks, { type: blobMimeType });
                             audioChunks = []; 
-                            if (audioBlob.size > 150) { 
+                            if (audioBlob.size > 1000) { // Aumentato da 150 a 1000 byte
                                 // Aggiorna lastTranscriptionAttemptPromise con la nuova operazione di trascrizione
                                 lastTranscriptionAttemptPromise = transcribeUserAudio(audioBlob)
                                     .then(userTranscript => {
-                                        if (userTranscript && userTranscript.trim() !== '') { addTranscript("Tu", userTranscript, `user-whisper-${Date.now()}`);}
-                                        else { addTranscript("Tu", "(Trascrizione Whisper fallita o audio non rilevato)", `user-whisper-fail-${Date.now()}`);}
+                                        if (userTranscript && userTranscript.trim() !== '') { addTranscript("Tu", userTranscript, `user-whisper-${Date.now()}`); }
+                                        else { addTranscript("Tu", "(Trascrizione Whisper fallita o audio non rilevato)", `user-whisper-fail-${Date.now()}`); }
                                     }).catch(e => {
                                         console.error("Errore trascrizione in onstop handler:", e);
                                         addTranscript("Tu", "(Errore grave durante trascrizione Whisper)", `user-whisper-error-${Date.now()}`);
@@ -402,7 +402,7 @@ function handleServerEvent(event) {
                     console.log("DEBUG: Grace period terminato, fermo MediaRecorder per Whisper.");
                     mediaRecorder.stop(); 
                 }
-            }, 1200); // Grace period (es. 1.2 secondi) - SPERIMENTA CON QUESTO VALORE
+            }, 1500); // Grace period aumentato da 1200ms a 1500ms
             break;
         case "conversation.item.input_audio_transcription.delta": case "conversation.item.input_audio_transcription.completed": break;
         case "conversation.item.created": 
