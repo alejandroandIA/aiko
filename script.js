@@ -403,7 +403,6 @@ function addTranscriptToHistory(speaker, textContent, itemId) {
         textContent.includes("(Audio troppo breve") ||
         textContent.includes("(Errore grave durante trascrizione")
     )) {
-        // Potremmo voler loggare questo fallimento da qualche parte se necessario, ma non nella history principale.
         console.warn(`DEBUG (addTranscriptToHistory - Whisper): Salto entry problematica: ${speaker}, "${textContent.substring(0,50)}..."`);
         return;
     }
@@ -413,10 +412,9 @@ function addTranscriptToHistory(speaker, textContent, itemId) {
     console.log(`DEBUG (addTranscriptToHistory): Speaker='${displayName}', Content='${textContent.substring(0,100)}...'`);
     
     if ((speaker === "Tu" || speaker === "AI" || speaker === "Aiko" || speaker === "Alejandro" || speaker === "Sistema") && typeof textContent === 'string' && textContent.trim() !== '') {
-        const speakerForHistory = (speaker === 'Tu' || speaker === 'Alejandro') ? 'Tu' : (speaker === 'AI' || speaker === 'Aiko') ? 'AI' : 'Sistema'; // Semplificato
+        const speakerForHistory = (speaker === 'Tu' || speaker === 'Alejandro') ? 'Tu' : (speaker === 'AI' || speaker === 'Aiko') ? 'AI' : 'Sistema';
         
         const lastEntry = currentConversationHistory[currentConversationHistory.length -1];
-        // Evita duplicati esatti consecutivi dalla stessa fonte con lo stesso itemId (se presente)
         if (lastEntry && lastEntry.speaker === speakerForHistory && lastEntry.content === textContent && (itemId === undefined || lastEntry.itemId === itemId)) {
              console.log(`DEBUG (addTranscriptToHistory): Salto entry duplicata: ${speakerForHistory}, "${textContent.substring(0,30)}..."`);
             return;
@@ -425,11 +423,10 @@ function addTranscriptToHistory(speaker, textContent, itemId) {
         console.log(`DEBUG (addTranscriptToHistory): AGGIUNGO A HISTORY (per Supabase): ${speakerForHistory}, "${textContent.substring(0,100)}..."`);
         currentConversationHistory.push({ speaker: speakerForHistory, content: textContent, itemId: itemId, timestamp: new Date().toISOString() });
 
-        // Estrai argomenti per i metadati della sessione
-        if (textContent.length > 20) { // Solo per contenuti significativi
-            const words = textContent.toLowerCase().match(/\b\w{6,}\b/g) || []; // Corretta regex: singolo backslash
+        if (textContent.length > 20) {
+            const words = textContent.toLowerCase().match(/\\b\\w{6,}\\b/g) || []; // Regex corretta
             words.forEach(word => {
-                if (!['quando', 'perché', 'come', 'dove', 'cosa', 'questo', 'quello', 'essere', 'avere', 'molto', 'sempre', 'allora'].includes(word)) { // Filtra stop words comuni
+                if (!['quando', 'perché', 'come', 'dove', 'cosa', 'questo', 'quello', 'essere', 'avere', 'molto', 'sempre', 'allora'].includes(word)) {
                     sessionTopics.add(word);
                 }
             });
@@ -440,16 +437,15 @@ function addTranscriptToHistory(speaker, textContent, itemId) {
 }
 
 function appendToHistory(speaker, textDelta, itemId) {
-    const speakerForHistory = "AI"; // Dato che questa è usata per lo streaming della risposta di Aiko
+    const speakerForHistory = "AI";
     
     if (speaker === "AI" || speaker === "Aiko") {
         const lastEntry = currentConversationHistory.length > 0 ? currentConversationHistory[currentConversationHistory.length - 1] : null;
-        // Se l'ultimo messaggio è di AI, ha lo stesso itemId (risposta in streaming), allora appendi.
         if (lastEntry && lastEntry.speaker === speakerForHistory && lastEntry.itemId === itemId) {
             if (typeof textDelta === 'string' && textDelta.trim() !== '') {
                 lastEntry.content += textDelta;
             }
-        } else { // Altrimenti, crea una nuova entry se c'è testo.
+        } else {
             if (typeof textDelta === 'string' && textDelta.trim() !== '') {
                 console.log(`DEBUG (appendToHistory): NUOVA ENTRY HISTORY (AI per Supabase): "${textDelta.substring(0,50)}..." (itemId: ${itemId})`);
                 currentConversationHistory.push({ speaker: speakerForHistory, content: textDelta, itemId: itemId, timestamp: new Date().toISOString() });
@@ -461,12 +457,12 @@ function appendToHistory(speaker, textDelta, itemId) {
 async function handleFunctionCall(functionCall) {
     if (functionCall.name === "cerca_nella_mia_memoria_personale") {
         if (statusDiv) statusDiv.textContent = "Aiko sta cercando nei ricordi...";
-        animateAikoFace(true); // Aiko "parla" mentre cerca
+        animateAikoFace(true);
         console.log("DEBUG (handleFnCall): cerca_nella_mia_memoria_personale. Args:", functionCall.arguments);
         try {
             const args = JSON.parse(functionCall.arguments); 
             const searchQuery = args.termini_di_ricerca;
-            // addTranscriptToHistory("Sistema", \`Aiko cerca: "\${searchQuery}"...\`, \`search-\${functionCall.call_id}\`); // Non mostrare all'utente
+            // addTranscriptToHistory("Sistema", \`Aiko cerca: "${searchQuery}"...\`, \`search-${functionCall.call_id}\`);
             
             const searchResponse = await fetch(\`\${SEARCH_MEMORY_API_ENDPOINT}?query=\${encodeURIComponent(searchQuery)}\`);
             let resultsForAI = "Errore durante la ricerca o nessun risultato."; 
@@ -496,7 +492,7 @@ async function handleFunctionCall(functionCall) {
                 displayResults = resultsForAI;
             }
             
-            // addTranscriptToHistory("Sistema", \`Risultati per "\${searchQuery}": \${displayResults.substring(0, 200)}\${displayResults.length > 200 ? "..." : ""}\`, \`search-res-\${functionCall.call_id}\`); // Non mostrare
+            // addTranscriptToHistory("Sistema", \`Risultati per "${searchQuery}": \${displayResults.substring(0, 200)}\${displayResults.length > 200 ? "..." : ""}\`, \`search-res-${functionCall.call_id}\`);
             sendClientEvent({ 
                 type: "conversation.item.create", 
                 item: { 
@@ -507,10 +503,9 @@ async function handleFunctionCall(functionCall) {
             });
             
             if (statusDiv) statusDiv.textContent = "Aiko ha consultato la memoria.";
-            // animateAikoFace(false); // Non fermare qui, la risposta dell'AI lo farà
         } catch (e) {
             console.error("DEBUG (handleFnCall) Errore:", e);
-            // addTranscriptToHistory("Sistema", \`Errore critico strumento ricerca: \${e.message}\`, \`search-catch-\${functionCall.call_id}\`); // Non mostrare
+            // addTranscriptToHistory("Sistema", \`Errore critico strumento ricerca: \${e.message}\`, \`search-catch-${functionCall.call_id}\`);
             sendClientEvent({ 
                 type: "conversation.item.create", 
                 item: { 
@@ -519,31 +514,30 @@ async function handleFunctionCall(functionCall) {
                     output: JSON.stringify({ error: "Errore tecnico nello strumento di ricerca." }) 
                 } 
             });
-            animateAikoFace(false); // Ferma l'animazione in caso di errore grave qui
+            animateAikoFace(false);
         }
     }
 }
 
 function handleServerEvent(event) {
-    // console.log(\`DEBUG (handleServerEvent): type='\${event.type}', obj:\`, JSON.parse(JSON.stringify(event)));
+    // console.log(\`DEBUG (handleServerEvent): type='${event.type}', obj:\`, event); // Semplificato per evitare JSON.stringify complesso qui
     switch (event.type) {
         case "session.created": currentOpenAISessionId = event.session.id; if (statusDiv) statusDiv.textContent = \`Aiko è pronta!\`; console.log(\`DEBUG: Sessione OpenAI creata: \${currentOpenAISessionId}\`); break;
         case "session.updated": break;
         case "input_audio_buffer.speech_started":
             if (statusDiv) statusDiv.textContent = "Ti ascolto...";
             clearTimeout(whisperGracePeriodTimer); 
-            if (!isRecordingForWhisper) { // Solo se non stiamo già registrando
-                // Otteniamo un nuovo stream per MediaRecorder ogni volta che l'utente inizia a parlare
+            if (!isRecordingForWhisper) {
                 navigator.mediaDevices.getUserMedia({ audio: true })
                     .then(stream => {
-                        mediaRecorderStream = stream; // Salva riferimento per stopparlo dopo
+                        mediaRecorderStream = stream;
                         audioChunks = [];
                         const mimeTypes = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', ''];
                         let supportedMimeType = '';
                         for (const mimeType of mimeTypes) { if (mimeType === '' || MediaRecorder.isTypeSupported(mimeType)) { supportedMimeType = mimeType; break; }}
                         mediaRecorder = new MediaRecorder(mediaRecorderStream, supportedMimeType ? { mimeType: supportedMimeType } : {});
                         mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data);};
-                        mediaRecorder.onstop = async () => { // Questo onstop è SOLO per Whisper
+                        mediaRecorder.onstop = async () => {
                             console.log("DEBUG mediaRecorder.onstop (per Whisper, dopo grace period): Chiamato.");
                             isRecordingForWhisper = false; 
                             if (mediaRecorderStream) { mediaRecorderStream.getTracks().forEach(track => track.stop()); mediaRecorderStream = null;}
@@ -551,12 +545,9 @@ function handleServerEvent(event) {
                             const blobMimeType = mediaRecorder.mimeType || supportedMimeType || 'audio/webm';
                             const audioBlob = new Blob(audioChunks, { type: blobMimeType });
                             audioChunks = []; 
+                            console.log(\`DEBUG mediaRecorder.onstop: audioBlob.size = \${audioBlob.size}, audioBlob.type = \${audioBlob.type}\`);
 
-                            // NUOVO LOG QUI
-                            console.log("DEBUG mediaRecorder.onstop: audioBlob.size = " + audioBlob.size + ", audioBlob.type = " + audioBlob.type);
-
-                            if (audioBlob.size > 1000) { // Aumentato da 150 a 1000 byte
-                                // Aggiorna lastTranscriptionAttemptPromise con la nuova operazione di trascrizione
+                            if (audioBlob.size > 1000) {
                                 lastTranscriptionAttemptPromise = transcribeUserAudio(audioBlob)
                                     .then(userTranscript => {
                                         if (userTranscript && userTranscript.trim() !== '') { addTranscriptToHistory("Tu", userTranscript, \`user-whisper-\${Date.now()}\`); }
@@ -567,7 +558,7 @@ function handleServerEvent(event) {
                                     });
                             } else { 
                                 addTranscriptToHistory("Tu", "(Audio troppo breve per trascrizione Whisper)", \`user-whisper-short-\${Date.now()}\`);
-                                lastTranscriptionAttemptPromise = Promise.resolve(); // Resetta a una promise risolta se non si trascrive
+                                lastTranscriptionAttemptPromise = Promise.resolve();
                             }
                         };
                         mediaRecorder.start();
@@ -589,18 +580,16 @@ function handleServerEvent(event) {
                     console.log("DEBUG: Grace period terminato, fermo MediaRecorder per Whisper.");
                     mediaRecorder.stop(); 
                 }
-            }, 1500); // Grace period aumentato da 1200ms a 1500ms
+            }, 1500);
             break;
         case "conversation.item.input_audio_transcription.delta": case "conversation.item.input_audio_transcription.completed": break;
         case "conversation.item.created": 
-            if (event.item && event.item.role === "user") { console.log(`DEBUG (handleServerEvent - User Item (Realtime API) Created ${event.item.content[0]?.type}):`, event.item); }
-            else if (event.item && event.item.role === "assistant") { console.log(`DEBUG (handleServerEvent - Assistant Item Created):`, event.item); }
-            else if (event.item && event.item.type === "function_call_output") { console.log(`DEBUG (handleServerEvent - Function Call Output Item Created):`, event.item); }
+            // console.log(\`DEBUG (handleServerEvent - Item Created):\`, event.item); // Log generico per item created
             break;
         case "conversation.item.updated": break;
         case "response.created": 
             if (statusDiv) statusDiv.textContent = "Aiko sta pensando..."; 
-            animateAikoFace(true); // Aiko inizia a "parlare" o "pensare"
+            animateAikoFace(true);
             console.log("DEBUG: OpenAI response.created:", event.response.id); 
             break;
         case "response.audio_transcript.delta": 
@@ -624,9 +613,6 @@ function handleServerEvent(event) {
             }
 
             if (!hasAudioOutput && !event.response.output?.some(part => part.type === 'function_call')) {
-                 // Se non c'è output audio e non è una function call (che ha la sua animazione)
-                 // Aiko smette di "parlare" se non c'è audio. 
-                 // L'audio gestirà la sua fine tramite output_audio_buffer.stopped
                 animateAikoFace(false);
             }
             
@@ -642,7 +628,7 @@ function handleServerEvent(event) {
             break;
         case "error":
             console.error("Errore OpenAI Realtime:", JSON.stringify(event, null, 2)); 
-            animateAikoFace(false); // Ferma animazione in caso di errore
+            animateAikoFace(false);
             let errorMessage = "Errore OpenAI sconosciuto"; 
             let errorCode = "unknown_error";
             
@@ -662,9 +648,9 @@ function handleServerEvent(event) {
                 saveCurrentSessionHistoryAndStop(); 
             }
             break;
-        case "input_audio_buffer.committed": case "rate_limits.updated": case "response.output_item.added": case "response.content_part.added": case "response.audio.done": case "response.audio_transcript.done": case "response.content_part.done": case "response.output_item.done": case "output_audio_buffer.started": case "response.function_call_arguments.delta": case "response.function_call_arguments.done": break;
+        // Rimosse le righe vuote per case non gestiti esplicitamente, il default li copre.
         case "output_audio_buffer.stopped": 
-            animateAikoFace(false); // Aiko smette di parlare quando l'audio finisce
+            animateAikoFace(false);
             if (statusDiv && (statusDiv.textContent.startsWith("Aiko risponde...") || statusDiv.textContent.startsWith("Aiko ha finito.") || statusDiv.textContent.startsWith("Aiko sta pensando...") )) {
                 statusDiv.textContent = "Aiko ha finito di parlare."; 
             } 
@@ -673,18 +659,32 @@ function handleServerEvent(event) {
             if (event.item?.type === "text") {
                 if (statusDiv && statusDiv.textContent.startsWith("Aiko sta pensando...")) {
                      statusDiv.textContent = "Aiko risponde..."; 
-                     animateAikoFace(true); // Assicura che Aiko "parli"
+                     animateAikoFace(true);
                 }
             }
             break; 
         case "response.content_part.added": 
             if (event.part?.type === "text" && typeof event.part.text === 'string') {
                 appendToHistory("AI", event.part.text, event.response_id);
-                animateAikoFace(true); // Aiko sta parlando attivamente
+                animateAikoFace(true);
             }
             break;
-        case "response.audio.done": case "response.audio_transcript.done": case "response.content_part.done": case "response.output_item.done": case "output_audio_buffer.started": case "response.function_call_arguments.delta": case "response.function_call_arguments.done": break;
-        default: console.log(`DEBUG (handleServerEvent - EVENTO SCONOSCIUTO O NON GESTITO): type='\${event.type}'. obj:`, JSON.parse(JSON.stringify(event))); break;
+        // Raggruppiamo i case non gestiti esplicitamente o che non richiedono azione.
+        case "input_audio_buffer.committed": 
+        case "rate_limits.updated": 
+        // case "response.output_item.added": // Già gestito sopra per type text
+        // case "response.content_part.added": // Già gestito sopra per type text
+        case "response.audio.done": 
+        case "response.audio_transcript.done": 
+        case "response.content_part.done": 
+        case "response.output_item.done": 
+        case "output_audio_buffer.started": 
+        case "response.function_call_arguments.delta": 
+        case "response.function_call_arguments.done": 
+            // Nessuna azione specifica richiesta per questi eventi al momento.
+            // console.log(\`DEBUG (handleServerEvent - Evento noto, nessuna azione): type='${event.type}'\`);
+            break;
+        default: console.log(\`DEBUG (handleServerEvent - EVENTO SCONOSCIUTO O NON GESTITO): type='${event.type}'. obj:\`, event); break;
     }
 }
 
