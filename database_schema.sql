@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS memoria_chat (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   speaker TEXT NOT NULL,
   content TEXT NOT NULL,
+  item_id TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

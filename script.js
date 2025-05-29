@@ -2,8 +2,8 @@
 const startButton = document.getElementById('startButton');
 const stopButton = document.getElementById('stopButton');
 const statusDiv = document.getElementById('status');
-const transcriptsDiv = document.getElementById('transcripts');
 const aiAudioPlayer = document.getElementById('aiAudioPlayer');
+const aikoFace = document.getElementById('aikoFace'); // Nuovo elemento per il viso
 
 const MODEL_NAME = "gpt-4o-realtime-preview-2024-12-17";
 const TRANSCRIBE_API_ENDPOINT = "/api/transcribeAudio";
@@ -32,6 +32,17 @@ let lastTranscriptionAttemptPromise = Promise.resolve(); // Aggiunta per traccia
 let currentConversationHistory = [];
 let sessionStartTime = null;
 let sessionTopics = new Set();
+
+// Funzione per animare il viso di Aiko
+function animateAikoFace(isTalking) {
+    if (aikoFace) {
+        if (isTalking) {
+            aikoFace.classList.add('talking');
+        } else {
+            aikoFace.classList.remove('talking');
+        }
+    }
+}
 
 async function getContextSummary() {
     if (statusDiv) statusDiv.textContent = "Analizzo contesto generale...";
@@ -96,7 +107,6 @@ async function transcribeUserAudio(audioBlob) {
 async function startConversation() {
     startButton.disabled = true;
     stopButton.disabled = false;
-    transcriptsDiv.innerHTML = "";
     currentConversationHistory = [];
     currentOpenAISessionId = null; 
     audioChunks = [];
@@ -131,7 +141,12 @@ async function startConversation() {
         // Nota: MediaRecorder verrà effettivamente creato con uno stream fresco in speech_started
 
         pc = new RTCPeerConnection();
-        pc.ontrack = (event) => { if (event.streams?.[0]) { aiAudioPlayer.srcObject = event.streams[0]; aiAudioPlayer.play().catch(e => {});}};
+        pc.ontrack = (event) => { 
+            if (event.streams?.[0]) { 
+                aiAudioPlayer.srcObject = event.streams[0]; 
+                aiAudioPlayer.play().catch(e => console.warn("Errore durante la riproduzione dell'audio di Aiko:", e));
+            }
+        };
         if (webrtcStreamForOpenAI) {
             webrtcStreamForOpenAI.getTracks().forEach(track => pc.addTrack(track, webrtcStreamForOpenAI));
         }
@@ -143,7 +158,7 @@ async function startConversation() {
                 type: "session.update",
                 session: {
                     turn_detection: { type: "server_vad", threshold: 0.5, silence_duration_ms: 2000, create_response: true }, 
-                    tools: [{type: "function",name: "cerca_nella_mia_memoria_personale",description: `Cerca nelle conversazioni passate con Alejandro per trovare informazioni specifiche.`,parameters: {type: "object",properties: { termini_di_ricerca: { type: "string", description: `Termini di ricerca specifici.` } },required: ["termini_di_ricerca"]}}]
+                    tools: [{type: "function",name: "cerca_nella_mia_memoria_personale",description: `Cerca nelle conversazioni passate con Alejandro per trovare informazioni specifiche. Usa termini di ricerca concisi e focalizzati.`,parameters: {type: "object",properties: { termini_di_ricerca: { type: "string", description: `Termini di ricerca specifici e concisi, ad esempio: "ricetta carbonara" o "ultimo libro consigliato".` } },required: ["termini_di_ricerca"]}}]
                 }
             });
             currentOpenAISessionId = "active_session"; // Segnala che la sessione è attiva
@@ -215,6 +230,7 @@ async function startConversation() {
 async function saveCurrentSessionHistoryAndStop() {
     if (saveCurrentSessionHistoryAndStop.called) { return; }
     saveCurrentSessionHistoryAndStop.called = true;
+    animateAikoFace(false); // Aiko smette di "parlare"
     console.log("DEBUG (saveCurrentSessionHistoryAndStop): Chiamata.");
     if (mediaRecorder && mediaRecorder.state === "recording") {
         console.log("DEBUG (saveCurrentSessionHistoryAndStop): MediaRecorder era in registrazione, lo fermo.");
@@ -329,6 +345,7 @@ saveCurrentSessionHistoryAndStop.called = false;
 
 function stopConversation() {
     console.log("DEBUG (stopConversation): Chiamata.");
+    animateAikoFace(false); // Assicura che Aiko smetta di "parlare"
     if (whisperGracePeriodTimer) clearTimeout(whisperGracePeriodTimer);
     isRecordingForWhisper = false;
 
@@ -379,97 +396,63 @@ function sendClientEvent(event) {
     }
 }
 
-function addTranscript(speaker, textContent, itemId) {
-    // Non mostrare le trascrizioni duplicate o fallite
+function addTranscriptToHistory(speaker, textContent, itemId) {
+    // Non salvare trascrizioni Whisper fallite o troppo brevi
     if (speaker === "Tu" && (
-        textContent.includes("(Trascrizione Whisper fallita") || 
+        textContent.includes("(Trascrizione Whisper fallita") ||
         textContent.includes("(Audio troppo breve") ||
         textContent.includes("(Errore grave durante trascrizione")
     )) {
-        // Salva nella history ma non mostrare nell'UI
-        if (typeof textContent === 'string' && textContent.trim() !== '') {
-            currentConversationHistory.push({ speaker: 'Tu', content: textContent, itemId: itemId });
-        }
-        return; // Non aggiungere al DOM
-    }
-    
-    const uniqueId = `${speaker.toLowerCase().replace(/\s+/g, '-')}-${itemId || Date.now()}`;
-    let div = document.getElementById(uniqueId);
-    const displayName = (speaker === 'Tu' || speaker === 'Alejandro') ? 'Alejandro' : (speaker === 'AI' || speaker === 'Aiko') ? 'Aiko' : speaker;
-    const className = (speaker === 'Tu' || speaker === 'Alejandro') ? 'tu' : (speaker === 'AI' || speaker === 'Aiko') ? 'ai' : 'sistema';
-    
-    if (!div) { 
-        div = document.createElement('div'); 
-        div.id = uniqueId; 
-        div.className = className; 
-        transcriptsDiv.appendChild(div); 
-    }
-    
-    const strong = document.createElement('strong'); 
-    strong.textContent = `${displayName}: `; 
-    div.innerHTML = ''; 
-    div.appendChild(strong); 
-    div.appendChild(document.createTextNode(textContent));
-    transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight; 
-    
-    console.log(`DEBUG (addTranscript): Speaker='${displayName}', Content='${textContent.substring(0,50)}...'`);
-    
-    if ((speaker === "Tu" || speaker === "AI" || speaker === "Aiko" || speaker === "Alejandro" || speaker === "Sistema") && typeof textContent === 'string' && textContent.trim() !== '') {
-        const speakerForHistory = (speaker === 'Tu' || speaker === 'Alejandro') ? 'Tu' : (speaker === 'AI' || speaker === 'Aiko') ? 'AI' : speaker;
-        const lastEntry = currentConversationHistory[currentConversationHistory.length -1];
-        if (lastEntry && lastEntry.itemId === itemId && lastEntry.content === textContent) {
-            // Skip duplicate
-        } else {
-            console.log(`DEBUG (addTranscript): AGGIUNGO A HISTORY (per Supabase): ${speakerForHistory}, "${textContent.substring(0,50)}..."`);
-            currentConversationHistory.push({ speaker: speakerForHistory, content: textContent, itemId: itemId });
-        }
-    } else { 
-        console.warn(`DEBUG (addTranscript): SALTO HISTORY: Speaker ${speaker}, Content "${textContent}"`);
+        // Potremmo voler loggare questo fallimento da qualche parte se necessario, ma non nella history principale.
+        console.warn(`DEBUG (addTranscriptToHistory - Whisper): Salto entry problematica: ${speaker}, "${textContent.substring(0,50)}..."`);
+        return;
     }
 
-    // NUOVO: Estrai argomenti per i metadati della sessione
-    if (textContent.length > 20) {
-        const words = textContent.toLowerCase().split(/\s+/);
-        words.forEach(word => {
-            if (word.length > 5 && !['quando', 'perché', 'come', 'dove', 'cosa', 'questo', 'quello'].includes(word)) {
-                sessionTopics.add(word);
-            }
-        });
+    const displayName = (speaker === 'Tu' || speaker === 'Alejandro') ? 'Tu' : (speaker === 'AI' || speaker === 'Aiko') ? 'AI' : speaker;
+    
+    console.log(`DEBUG (addTranscriptToHistory): Speaker='${displayName}', Content='${textContent.substring(0,100)}...'`);
+    
+    if ((speaker === "Tu" || speaker === "AI" || speaker === "Aiko" || speaker === "Alejandro" || speaker === "Sistema") && typeof textContent === 'string' && textContent.trim() !== '') {
+        const speakerForHistory = (speaker === 'Tu' || speaker === 'Alejandro') ? 'Tu' : (speaker === 'AI' || speaker === 'Aiko') ? 'AI' : 'Sistema'; // Semplificato
+        
+        const lastEntry = currentConversationHistory[currentConversationHistory.length -1];
+        // Evita duplicati esatti consecutivi dalla stessa fonte con lo stesso itemId (se presente)
+        if (lastEntry && lastEntry.speaker === speakerForHistory && lastEntry.content === textContent && (itemId === undefined || lastEntry.itemId === itemId)) {
+             console.log(`DEBUG (addTranscriptToHistory): Salto entry duplicata: ${speakerForHistory}, "${textContent.substring(0,30)}..."`);
+            return;
+        }
+        
+        console.log(`DEBUG (addTranscriptToHistory): AGGIUNGO A HISTORY (per Supabase): ${speakerForHistory}, "${textContent.substring(0,100)}..."`);
+        currentConversationHistory.push({ speaker: speakerForHistory, content: textContent, itemId: itemId, timestamp: new Date().toISOString() });
+
+        // Estrai argomenti per i metadati della sessione
+        if (textContent.length > 20) { // Solo per contenuti significativi
+            const words = textContent.toLowerCase().match(/\b\w{6,}\b/g) || []; // Corretta regex: singolo backslash
+            words.forEach(word => {
+                if (!['quando', 'perché', 'come', 'dove', 'cosa', 'questo', 'quello', 'essere', 'avere', 'molto', 'sempre', 'allora'].includes(word)) { // Filtra stop words comuni
+                    sessionTopics.add(word);
+                }
+            });
+        }
+    } else { 
+        console.warn(`DEBUG (addTranscriptToHistory): SALTO HISTORY (contenuto non valido): Speaker ${speaker}, Content "${textContent}"`);
     }
 }
 
-function appendToTranscript(speaker, textDelta, itemId) {
-    const domSpeakerClass = (speaker === "Aiko" || speaker === "AI") ? "ai" : speaker.toLowerCase().replace(/\s+/g, '-');
-    const displaySpeakerName = "Aiko"; 
-    const domItemId = itemId || 'ai-streaming-response'; 
-    const uniqueId = `${domSpeakerClass}-${domItemId}`;
-    let div = document.getElementById(uniqueId); 
-    let isNew = false;
-    
-    if (!div) { 
-        isNew = true; 
-        div = document.createElement('div'); 
-        div.id = uniqueId; 
-        div.className = domSpeakerClass; 
-        const strong = document.createElement('strong'); 
-        strong.textContent = `${displaySpeakerName}: `; 
-        div.appendChild(strong); 
-        transcriptsDiv.appendChild(div); 
-    }
-    
-    div.appendChild(document.createTextNode(textDelta)); 
-    transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight;
+function appendToHistory(speaker, textDelta, itemId) {
+    const speakerForHistory = "AI"; // Dato che questa è usata per lo streaming della risposta di Aiko
     
     if (speaker === "AI" || speaker === "Aiko") {
         const lastEntry = currentConversationHistory.length > 0 ? currentConversationHistory[currentConversationHistory.length - 1] : null;
-        if (isNew || !lastEntry || lastEntry.speaker !== "AI" || lastEntry.itemId !== domItemId) { 
+        // Se l'ultimo messaggio è di AI, ha lo stesso itemId (risposta in streaming), allora appendi.
+        if (lastEntry && lastEntry.speaker === speakerForHistory && lastEntry.itemId === itemId) {
             if (typeof textDelta === 'string' && textDelta.trim() !== '') {
-                console.log(`DEBUG (appendToTranscript): NUOVA ENTRY HISTORY (AI per Supabase): "${textDelta.substring(0,50)}..." (itemId: ${domItemId})`);
-                currentConversationHistory.push({ speaker: "AI", content: textDelta, itemId: domItemId });
+                lastEntry.content += textDelta;
             }
-        } else if (lastEntry.speaker === "AI" && lastEntry.itemId === domItemId) { 
-            if (typeof textDelta === 'string' && textDelta.trim() !== '') { 
-                lastEntry.content += textDelta; 
+        } else { // Altrimenti, crea una nuova entry se c'è testo.
+            if (typeof textDelta === 'string' && textDelta.trim() !== '') {
+                console.log(`DEBUG (appendToHistory): NUOVA ENTRY HISTORY (AI per Supabase): "${textDelta.substring(0,50)}..." (itemId: ${itemId})`);
+                currentConversationHistory.push({ speaker: speakerForHistory, content: textDelta, itemId: itemId, timestamp: new Date().toISOString() });
             }
         }
     }
@@ -478,13 +461,14 @@ function appendToTranscript(speaker, textDelta, itemId) {
 async function handleFunctionCall(functionCall) {
     if (functionCall.name === "cerca_nella_mia_memoria_personale") {
         if (statusDiv) statusDiv.textContent = "Aiko sta cercando nei ricordi...";
+        animateAikoFace(true); // Aiko "parla" mentre cerca
         console.log("DEBUG (handleFnCall): cerca_nella_mia_memoria_personale. Args:", functionCall.arguments);
         try {
             const args = JSON.parse(functionCall.arguments); 
             const searchQuery = args.termini_di_ricerca;
-            addTranscript("Sistema", `Aiko cerca: "${searchQuery}"...`, `search-${functionCall.call_id}`);
+            // addTranscriptToHistory("Sistema", \`Aiko cerca: "\${searchQuery}"...\`, \`search-\${functionCall.call_id}\`); // Non mostrare all'utente
             
-            const searchResponse = await fetch(`${SEARCH_MEMORY_API_ENDPOINT}?query=${encodeURIComponent(searchQuery)}`);
+            const searchResponse = await fetch(\`\${SEARCH_MEMORY_API_ENDPOINT}?query=\${encodeURIComponent(searchQuery)}\`);
             let resultsForAI = "Errore durante la ricerca o nessun risultato."; 
             let displayResults = "Errore durante la ricerca.";
             
@@ -497,22 +481,22 @@ async function handleFunctionCall(functionCall) {
                 catch (parseError) { 
                     console.warn("DEBUG (handleFnCall): Risposta da /api/searchMemory non JSON.", parseError); 
                     const textResponse = await searchResponse.text(); 
-                    resultsForAI = `Risposta testuale (errore?): ${textResponse.substring(0, 200)}`; 
+                    resultsForAI = \`Risposta testuale (errore?): \${textResponse.substring(0, 200)}\`; 
                     displayResults = resultsForAI;
                 }
             } else {
-                let errorText = `Errore server ${searchResponse.status}`;
+                let errorText = \`Errore server \${searchResponse.status}\`;
                 try { 
                     const errorData = await searchResponse.json(); 
-                    errorText = `Errore ricerca (${searchResponse.status}): ${errorData.error || ""}`; 
+                    errorText = \`Errore ricerca (\${searchResponse.status}): \${errorData.error || ""}\`; 
                 } catch (e) { 
-                    errorText = `Errore server ${searchResponse.status}: ${await searchResponse.text().catch(() => "")}`; 
+                    errorText = \`Errore server \${searchResponse.status}: \${await searchResponse.text().catch(() => "")}\`; 
                 }
                 resultsForAI = errorText; 
                 displayResults = resultsForAI;
             }
             
-            addTranscript("Sistema", `Risultati per "${searchQuery}": ${displayResults.substring(0, 200)}${displayResults.length > 200 ? "..." : ""}`, `search-res-${functionCall.call_id}`);
+            // addTranscriptToHistory("Sistema", \`Risultati per "\${searchQuery}": \${displayResults.substring(0, 200)}\${displayResults.length > 200 ? "..." : ""}\`, \`search-res-\${functionCall.call_id}\`); // Non mostrare
             sendClientEvent({ 
                 type: "conversation.item.create", 
                 item: { 
@@ -523,9 +507,10 @@ async function handleFunctionCall(functionCall) {
             });
             
             if (statusDiv) statusDiv.textContent = "Aiko ha consultato la memoria.";
+            // animateAikoFace(false); // Non fermare qui, la risposta dell'AI lo farà
         } catch (e) {
             console.error("DEBUG (handleFnCall) Errore:", e);
-            addTranscript("Sistema", `Errore critico strumento ricerca: ${e.message}`, `search-catch-${functionCall.call_id}`);
+            // addTranscriptToHistory("Sistema", \`Errore critico strumento ricerca: \${e.message}\`, \`search-catch-\${functionCall.call_id}\`); // Non mostrare
             sendClientEvent({ 
                 type: "conversation.item.create", 
                 item: { 
@@ -534,14 +519,15 @@ async function handleFunctionCall(functionCall) {
                     output: JSON.stringify({ error: "Errore tecnico nello strumento di ricerca." }) 
                 } 
             });
+            animateAikoFace(false); // Ferma l'animazione in caso di errore grave qui
         }
     }
 }
 
 function handleServerEvent(event) {
-    // console.log(`DEBUG (handleServerEvent): type='${event.type}', obj:`, JSON.parse(JSON.stringify(event)));
+    // console.log(\`DEBUG (handleServerEvent): type='\${event.type}', obj:\`, JSON.parse(JSON.stringify(event)));
     switch (event.type) {
-        case "session.created": currentOpenAISessionId = event.session.id; if (statusDiv) statusDiv.textContent = `Aiko è pronta!`; console.log(`DEBUG: Sessione OpenAI creata: ${currentOpenAISessionId}`); break;
+        case "session.created": currentOpenAISessionId = event.session.id; if (statusDiv) statusDiv.textContent = \`Aiko è pronta!\`; console.log(\`DEBUG: Sessione OpenAI creata: \${currentOpenAISessionId}\`); break;
         case "session.updated": break;
         case "input_audio_buffer.speech_started":
             if (statusDiv) statusDiv.textContent = "Ti ascolto...";
@@ -573,14 +559,14 @@ function handleServerEvent(event) {
                                 // Aggiorna lastTranscriptionAttemptPromise con la nuova operazione di trascrizione
                                 lastTranscriptionAttemptPromise = transcribeUserAudio(audioBlob)
                                     .then(userTranscript => {
-                                        if (userTranscript && userTranscript.trim() !== '') { addTranscript("Tu", userTranscript, `user-whisper-${Date.now()}`); }
-                                        else { addTranscript("Tu", "(Trascrizione Whisper fallita o audio non rilevato)", `user-whisper-fail-${Date.now()}`); }
+                                        if (userTranscript && userTranscript.trim() !== '') { addTranscriptToHistory("Tu", userTranscript, \`user-whisper-\${Date.now()}\`); }
+                                        else { addTranscriptToHistory("Tu", "(Trascrizione Whisper fallita o audio non rilevato)", \`user-whisper-fail-\${Date.now()}\`); }
                                     }).catch(e => {
                                         console.error("Errore trascrizione in onstop handler:", e);
-                                        addTranscript("Tu", "(Errore grave durante trascrizione Whisper)", `user-whisper-error-${Date.now()}`);
+                                        addTranscriptToHistory("Tu", "(Errore grave durante trascrizione Whisper)", \`user-whisper-error-\${Date.now()}\`);
                                     });
                             } else { 
-                                addTranscript("Tu", "(Audio troppo breve per trascrizione Whisper)", `user-whisper-short-${Date.now()}`);
+                                addTranscriptToHistory("Tu", "(Audio troppo breve per trascrizione Whisper)", \`user-whisper-short-\${Date.now()}\`);
                                 lastTranscriptionAttemptPromise = Promise.resolve(); // Resetta a una promise risolta se non si trascrive
                             }
                         };
@@ -612,17 +598,15 @@ function handleServerEvent(event) {
             else if (event.item && event.item.type === "function_call_output") { console.log(`DEBUG (handleServerEvent - Function Call Output Item Created):`, event.item); }
             break;
         case "conversation.item.updated": break;
-        case "response.created": if (statusDiv) statusDiv.textContent = "Aiko sta pensando..."; console.log("DEBUG: OpenAI response.created:", event.response.id); break;
+        case "response.created": 
+            if (statusDiv) statusDiv.textContent = "Aiko sta pensando..."; 
+            animateAikoFace(true); // Aiko inizia a "parlare" o "pensare"
+            console.log("DEBUG: OpenAI response.created:", event.response.id); 
+            break;
         case "response.audio_transcript.delta": 
             if (typeof event.delta === 'string') { 
-                // NON FACCIAMO NULLA CON LA TRASCRIZIONE REALTIME DELL'UTENTE PER ORA
-                // Verrà gestita dalla trascrizione Whisper separata per maggiore accuratezza
-                // console.log("DEBUG: OpenAI response.audio_transcript.delta (User audio real-time):", event.delta);
-                // Se si volesse visualizzarla (ma non salvarla nella history principale):
-                // appendToTranscript("Tu", event.delta, `user-realtime-${event.response_id || Date.now()}`); 
+                // NON FACCIAMO NULLA CON LA TRASCRIZIONE REALTIME DELL'UTENTE
             }
-            // Lo status "Aiko risponde..." dovrebbe essere gestito quando arriva il testo effettivo dell'AI
-            // if (statusDiv && !statusDiv.textContent.startsWith("Aiko risponde...")) { statusDiv.textContent = "Aiko risponde..."; } 
             break;
         case "response.done": 
             console.log("DEBUG: OpenAI response.done:", event.response.id, "Output:", event.response.output); 
@@ -632,32 +616,33 @@ function handleServerEvent(event) {
             const hasTextOutput = event.response.output?.some(part => part.type === 'text');
             const hasAudioOutput = event.response.output?.some(part => part.type === 'audio');
 
-            // Aggiungi la trascrizione di Aiko se c'è audio
             if (hasAudioOutput) {
                 const audioOutput = event.response.output.find(part => part.type === 'audio');
                 if (audioOutput && audioOutput.transcript) {
-                    // Mostra la trascrizione di Aiko
-                    addTranscript("AI", audioOutput.transcript, event.response.id);
+                    addTranscriptToHistory("AI", audioOutput.transcript, event.response.id);
                 }
             }
 
+            if (!hasAudioOutput && !event.response.output?.some(part => part.type === 'function_call')) {
+                 // Se non c'è output audio e non è una function call (che ha la sua animazione)
+                 // Aiko smette di "parlare" se non c'è audio. 
+                 // L'audio gestirà la sua fine tramite output_audio_buffer.stopped
+                animateAikoFace(false);
+            }
+            
             if (hasTextOutput || hasAudioOutput) {
-                 // Non impostare "Aiko ha finito" qui se c'è output audio, 
-                 // perché output_audio_buffer.stopped lo gestirà.
-                 // Se c'è solo testo (o testo e function call), allora è ok.
                 if (!hasAudioOutput && (statusDiv.textContent.startsWith("Aiko sta pensando...") || statusDiv.textContent.startsWith("Aiko risponde..."))) {
                     statusDiv.textContent = "Aiko ha finito.";
                 }
             } else if (!event.response.output?.some(part => part.type === 'function_call')) {
-                // Se non c'è NESSUN output (né testo, né audio, né function call)
-                // E non stavamo già gestendo una function call (che ha i suoi messaggi di stato)
                 if (statusDiv.textContent.startsWith("Aiko sta pensando...") || statusDiv.textContent.startsWith("Aiko risponde...")) {
-                    statusDiv.textContent = "Aiko ha concluso (nessuna risposta testuale/audio diretta).";
+                    statusDiv.textContent = "Aiko ha concluso.";
                 }
             }
             break;
         case "error":
             console.error("Errore OpenAI Realtime:", JSON.stringify(event, null, 2)); 
+            animateAikoFace(false); // Ferma animazione in caso di errore
             let errorMessage = "Errore OpenAI sconosciuto"; 
             let errorCode = "unknown_error";
             
@@ -669,7 +654,7 @@ function handleServerEvent(event) {
                 errorCode = event.code || errorCode; 
             }
             
-            if (statusDiv) statusDiv.textContent = `Errore OpenAI: ${errorMessage.substring(0, 60)}`;
+            if (statusDiv) statusDiv.textContent = \`Errore OpenAI: \${errorMessage.substring(0, 60)}\`;
             const criticalErrorCodes = ["session_expired", "token_expired", "session_not_found", "connection_closed", "session_failed", "invalid_request_error", "authentication_error", "api_error", "invalid_api_key", "rate_limit_exceeded"];
             
             if (criticalErrorCodes.includes(errorCode) && !saveCurrentSessionHistoryAndStop.called) { 
@@ -679,26 +664,27 @@ function handleServerEvent(event) {
             break;
         case "input_audio_buffer.committed": case "rate_limits.updated": case "response.output_item.added": case "response.content_part.added": case "response.audio.done": case "response.audio_transcript.done": case "response.content_part.done": case "response.output_item.done": case "output_audio_buffer.started": case "response.function_call_arguments.delta": case "response.function_call_arguments.done": break;
         case "output_audio_buffer.stopped": 
-            if (statusDiv && (statusDiv.textContent.startsWith("Aiko risponde...") || statusDiv.textContent.startsWith("Aiko ha finito.") || statusDiv.textContent.startsWith("Aiko ha finito di generare il testo.") )) { // Aggiunto "Aiko ha finito."
+            animateAikoFace(false); // Aiko smette di parlare quando l'audio finisce
+            if (statusDiv && (statusDiv.textContent.startsWith("Aiko risponde...") || statusDiv.textContent.startsWith("Aiko ha finito.") || statusDiv.textContent.startsWith("Aiko sta pensando...") )) {
                 statusDiv.textContent = "Aiko ha finito di parlare."; 
             } 
             break;
         case "response.output_item.added": 
             if (event.item?.type === "text") {
-                // Questo evento potrebbe essere usato per iniziare a mostrare che Aiko risponde,
-                // se `response.audio_transcript.delta` viene rimosso come trigger di stato.
                 if (statusDiv && statusDiv.textContent.startsWith("Aiko sta pensando...")) {
                      statusDiv.textContent = "Aiko risponde..."; 
+                     animateAikoFace(true); // Assicura che Aiko "parli"
                 }
             }
             break; 
         case "response.content_part.added": 
             if (event.part?.type === "text" && typeof event.part.text === 'string') {
-                appendToTranscript("AI", event.part.text, event.response_id);
+                appendToHistory("AI", event.part.text, event.response_id);
+                animateAikoFace(true); // Aiko sta parlando attivamente
             }
             break;
         case "response.audio.done": case "response.audio_transcript.done": case "response.content_part.done": case "response.output_item.done": case "output_audio_buffer.started": case "response.function_call_arguments.delta": case "response.function_call_arguments.done": break;
-        default: console.log(`DEBUG (handleServerEvent - EVENTO SCONOSCIUTO O NON GESTITO): type='${event.type}'. obj:`, JSON.parse(JSON.stringify(event))); break;
+        default: console.log(`DEBUG (handleServerEvent - EVENTO SCONOSCIUTO O NON GESTITO): type='\${event.type}'. obj:`, JSON.parse(JSON.stringify(event))); break;
     }
 }
 
@@ -707,6 +693,7 @@ startButton.addEventListener('click', startConversation);
 stopButton.addEventListener('click', () => {
     console.log("DEBUG: Pulsante TERMINA premuto.");
     if (statusDiv) statusDiv.textContent = "Chiusura conversazione e salvataggio...";
+    animateAikoFace(false); // Aiko smette di "parlare"
     if (!saveCurrentSessionHistoryAndStop.called) { saveCurrentSessionHistoryAndStop(); }
 });
 window.addEventListener('beforeunload', (event) => { if (stopButton.disabled === false) { console.log("DEBUG: Evento beforeunload, conversazione attiva."); }});

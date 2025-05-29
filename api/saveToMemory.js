@@ -25,19 +25,27 @@ export default async function handler(req, res) {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     try {
-        const { speaker, content } = req.body;
+        const { speaker, content, itemId, timestamp } = req.body;
 
         // Validazione base
         if (!speaker || !content) {
             console.warn('api/saveToMemory: Dati mancanti. Speaker:', speaker, 'Content:', content ? content.substring(0, 50) : 'null');
-            return res.status(400).json({ error: 'Dati mancanti' });
+            return res.status(400).json({ error: 'Dati mancanti per speaker o content' });
+        }
+
+        const entryToInsert = {
+            speaker,
+            content,
+            item_id: itemId,
+        };
+
+        if (timestamp) {
+            entryToInsert.created_at = timestamp;
         }
 
         const { data, error } = await supabase
             .from('memoria_chat')
-            .insert([
-                { speaker, content }
-            ]);
+            .insert([entryToInsert]);
 
         if (error) {
             console.error('Errore Supabase (insert) api/saveToMemory:', error);

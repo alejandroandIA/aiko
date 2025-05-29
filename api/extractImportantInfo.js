@@ -86,7 +86,21 @@ Formato output JSON:
         }
 
         const data = await response.json();
-        const extractedInfo = JSON.parse(data.choices[0].message.content);
+        let extractedInfo = { important_facts: [], summary: "" }; // Valore di default
+
+        if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
+            try {
+                extractedInfo = JSON.parse(data.choices[0].message.content);
+            } catch (parseError) {
+                console.error('Errore parsing JSON dalla risposta di OpenAI in extractImportantInfo:', parseError);
+                console.error('Contenuto ricevuto da OpenAI che ha causato errore di parsing:', data.choices[0].message.content);
+                // Non restituire un errore 500 qui, ma piuttosto un set di risultati vuoto o parziale se possibile.
+                // In questo caso, restituiremo il valore di default (vuoto).
+                // Potresti anche decidere di inviare una notifica o loggare questo evento in modo più specifico.
+            }
+        } else {
+            console.warn('Risposta da OpenAI non conteneva il percorso atteso per il contenuto del messaggio in extractImportantInfo.', data);
+        }
 
         return res.status(200).json(extractedInfo);
 

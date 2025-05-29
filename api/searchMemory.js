@@ -1,6 +1,8 @@
 // api/searchMemory.js
 import { createClient } from '@supabase/supabase-js';
-import { USER_NAME, AI_NAME } from '../src/config/aiConfig.mjs';
+// import { USER_NAME, AI_NAME } from '../src/config/aiConfig.mjs'; // File non trovato, uso valori diretti
+const USER_NAME = 'Tu';
+const AI_NAME = 'Aiko';
 
 export default async function handler(req, res) {
     if (req.method === 'OPTIONS') {
@@ -33,38 +35,93 @@ export default async function handler(req, res) {
 
         console.log('DEBUG api/searchMemory: Searching for term:', query);
 
-        let { data, error } = await supabase
+        let combinedResults = [];
+
+        // 1. Cerca in memoria_chat
+        let { data: chatData, error: chatError } = await supabase
             .from('memoria_chat')
             .select('speaker, content, created_at')
             .textSearch('content', query, {
                 type: 'websearch',
-                config: 'italian'
+                config: 'italian' // Manteniamo 'italian' per la chat se è la lingua prevalente
             })
             .order('created_at', { ascending: false })
-            .limit(10);
+            .limit(7); // Limite per bilanciare con important_info
 
-        // Se la ricerca testuale non trova nulla, prova con ILIKE per maggiore flessibilità
-        if ((!data || data.length === 0) && !error) {
-            ({ data, error } = await supabase
+        if ((!chatData || chatData.length === 0) && !chatError) {
+            ({ data: chatData, error: chatError } = await supabase
                 .from('memoria_chat')
                 .select('speaker, content, created_at')
                 .ilike('content', `%${query}%`)
                 .order('created_at', { ascending: false })
-                .limit(10));
+                .limit(7));
         }
 
-        if (error) {
-            console.error('Errore Supabase (select) api/searchMemory:', error);
-            return res.status(500).json({ error: 'Errore ricerca memoria.', details: error.message });
+        if (chatError) {
+            console.error('Errore Supabase (select memoria_chat) api/searchMemory:', chatError);
+            // Non ritornare subito, potremmo avere risultati da important_info
+        } else if (chatData) {
+            combinedResults.push(...chatData.map(item => ({
+                source: 'chat',
+                speaker: item.speaker,
+                content: item.content,
+                timestamp: item.created_at
+            })));
         }
 
-        const formattedResults = data && data.length > 0
-            ? data.map(item => {
-                  const speakerLabel = item.speaker === 'Tu' ? USER_NAME : AI_NAME;
-                  // Format più conciso per l'IA, include data e ora
-                  return `[Memoria del ${new Date(item.created_at).toLocaleString('it-IT', {dateStyle: 'short', timeStyle: 'short'})} - ${speakerLabel}]: "${item.content}"`;
+        // 2. Cerca in important_info
+        let { data: infoData, error: infoError } = await supabase
+            .from('important_info')
+            .select('info, type, context, created_at, confidence')
+            .textSearch('info', query, { // Assumendo che 'info' sia il campo principale da cercare
+                type: 'websearch',
+                config: 'simple' // Usiamo 'simple' o 'english' se 'info' può essere multilingue
+            })
+            .order('created_at', { ascending: false })
+            .limit(5); // Limite per i fatti importanti
+
+        if ((!infoData || infoData.length === 0) && !infoError) {
+             ({ data: infoData, error: infoError } = await supabase
+                .from('important_info')
+                .select('info, type, context, created_at, confidence')
+                .ilike('info', `%${query}%`)
+                .order('created_at', { ascending: false })
+                .limit(5));
+        }
+        
+        if (infoError) {
+            console.error('Errore Supabase (select important_info) api/searchMemory:', infoError);
+        } else if (infoData) {
+            combinedResults.push(...infoData.map(item => ({
+                source: 'info',
+                type: item.type,
+                content: item.info,
+                context: item.context,
+                confidence: item.confidence,
+                timestamp: item.created_at
+            })));
+        }
+
+        if (chatError && infoError && combinedResults.length === 0) {
+            return res.status(500).json({ error: 'Errore ricerca memoria in entrambe le tabelle.', details: { chat: chatError?.message, info: infoError?.message } });
+        }
+
+        // Ordina i risultati combinati per data (più recenti prima)
+        combinedResults.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        
+        // Limita il numero totale di risultati combinati, se necessario
+        const finalResults = combinedResults.slice(0, 10);
+
+        const formattedResults = finalResults.length > 0
+            ? finalResults.map(item => {
+                  if (item.source === 'chat') {
+                    const speakerLabel = item.speaker === 'Tu' ? USER_NAME : AI_NAME;
+                    return `[Conversazione del ${new Date(item.timestamp).toLocaleString('it-IT', {dateStyle: 'short', timeStyle: 'short'})} - ${speakerLabel}]: "${item.content}"`;
+                  } else { // source === 'info'
+                    return `[Fatto Importante (${item.type}, fiducia: ${item.confidence || 'N/D'}, registrato il ${new Date(item.timestamp).toLocaleDateString('it-IT')} )]: "${item.content}" ${item.context ? '(Contesto: ' + item.context + ')' : ''}`;
+                  }
               }).join('\n---\n')
-            : `Nessun ricordo trovato per i termini di ricerca: "${query}".`;
+            : `Nessun ricordo o fatto importante trovato per i termini di ricerca: "${query}".`;
 
         res.setHeader('Access-Control-Allow-Origin', '*');
         return res.status(200).json({ results: formattedResults });

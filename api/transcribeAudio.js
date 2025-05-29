@@ -83,10 +83,11 @@ export default async function handler(req, res) {
             contentType: clientContentType, // Questo è più per informazione, Whisper si basa sull'estensione
         });
         form.append('model', 'whisper-1');
-        form.append('language', 'it'); // FORZA LA LINGUA ITALIANA per trascrizioni migliori
-        form.append('prompt', 'Conversazione in italiano tra Alejandro e Aiko.'); // Aiuta Whisper con il contesto
+        // form.append('language', 'it'); // Rimosso per auto-detect della lingua
+        // form.append('prompt', 'Conversazione in italiano tra Alejandro e Aiko.'); // Rimosso prompt specifico
+        form.append('prompt', 'Aiko, Alejandro, OpenAI, Supabase.'); // Nuovo prompt minimale per termini chiave
 
-        console.log(`[${new Date().toISOString()}] DEBUG api/transcribeAudio: FormData preparato. Invio a OpenAI Whisper API...`);
+        console.log(`[${new Date().toISOString()}] DEBUG api/transcribeAudio: FormData preparato con prompt minimale. Invio a OpenAI Whisper API...`);
 
         const WHISPER_API_TIMEOUT_MS = 60000; // Aumento a 60 secondi
         let whisperResponse;
