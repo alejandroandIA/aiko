@@ -9,6 +9,12 @@ export const config = {
 };
 
 async function getRawBody(req) {
+    // Se req.body è già un Buffer (grazie a Express raw middleware), restituiscilo
+    if (Buffer.isBuffer(req.body)) {
+        return req.body;
+    }
+    
+    // Altrimenti usa il metodo stream originale
     return new Promise((resolve, reject) => {
         const chunks = [];
         req.on('data', chunk => chunks.push(chunk));

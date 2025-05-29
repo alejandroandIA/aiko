@@ -139,18 +139,25 @@ async function startConversation() {
             });
             currentOpenAISessionId = "active_session"; // Segnala che la sessione è attiva
         };
-        dc.onmessage = (event) => { /* ... (identico a prima) ... */ 
+        
+        dc.onmessage = (event) => {
             let eventData;
             try {
-                if (typeof event.data === 'string') { eventData = JSON.parse(event.data); handleServerEvent(eventData); }
-                else { console.warn("dc.onmessage: event.data non è una stringa:", event.data); }
+                if (typeof event.data === 'string') { 
+                    eventData = JSON.parse(event.data); 
+                    handleServerEvent(eventData); 
+                }
+                else { 
+                    console.warn("dc.onmessage: event.data non è una stringa:", event.data); 
+                }
             } catch (e) {
                 console.error("[dc.onmessage catch] Errore:", e);
                 console.error("[dc.onmessage catch] Dati grezzi (se stringa):", typeof event.data === 'string' ? event.data.substring(0, 500) + "..." : "event.data non era stringa");
                 if (statusDiv) statusDiv.textContent = "Errore: Messaggio server non interpretabile.";
             }
         };
-        dc.onclose = () => { /* ... (identico a prima) ... */ 
+        
+        dc.onclose = () => {
             console.log("DEBUG: Data channel chiuso.");
             if (currentOpenAISessionId) { 
                 console.warn("DEBUG dc.onclose: Data channel chiuso inaspettatamente. Stato WebRTC:", pc?.connectionState);
@@ -159,17 +166,22 @@ async function startConversation() {
                 }
             }
         };
-        dc.onerror = (error) => { /* ... (identico a prima) ... */ 
+        
+        dc.onerror = (error) => {
             console.error("Errore Data channel:", error);
             if (statusDiv) statusDiv.textContent = "Errore critico di connessione.";
-            if (currentOpenAISessionId && !saveCurrentSessionHistoryAndStop.called) { saveCurrentSessionHistoryAndStop(); }
+            if (currentOpenAISessionId && !saveCurrentSessionHistoryAndStop.called) { 
+                saveCurrentSessionHistoryAndStop(); 
+            }
         };
 
-        pc.onconnectionstatechange = () => { /* ... (identico a prima) ... */
+        pc.onconnectionstatechange = () => {
             console.log(`DEBUG: Stato WebRTC: ${pc.connectionState}`);
             if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
                 if (statusDiv) statusDiv.textContent = `Connessione: ${pc.connectionState}.`;
-                if (mediaRecorder && mediaRecorder.state === "recording") { mediaRecorder.stop(); }
+                if (mediaRecorder && mediaRecorder.state === "recording") { 
+                    mediaRecorder.stop(); 
+                }
                 if (pc.connectionState !== "closed" && currentOpenAISessionId && !saveCurrentSessionHistoryAndStop.called) {
                     console.log("DEBUG pc.onconnectionstatechange: Triggering saveCurrentSessionHistoryAndStop.");
                     saveCurrentSessionHistoryAndStop();
@@ -237,7 +249,7 @@ async function saveCurrentSessionHistoryAndStop() {
 }
 saveCurrentSessionHistoryAndStop.called = false;
 
-function stopConversation() { /* ... (identico all'ultima versione fornita) ... */
+function stopConversation() {
     console.log("DEBUG (stopConversation): Chiamata.");
     if (whisperGracePeriodTimer) clearTimeout(whisperGracePeriodTimer);
     isRecordingForWhisper = false;
@@ -257,9 +269,16 @@ function stopConversation() { /* ... (identico all'ultima versione fornita) ... 
         console.log("DEBUG (stopConversation): Stream WebRTC rilasciato.");
     }
     
-    if (dc && dc.readyState !== "closed") { dc.close(); console.log("DEBUG (stopConversation): Data channel chiuso.");}
+    if (dc && dc.readyState !== "closed") { 
+        dc.close(); 
+        console.log("DEBUG (stopConversation): Data channel chiuso.");
+    }
     dc = null;
-    if (pc && pc.connectionState !== "closed") { pc.close(); console.log("DEBUG (stopConversation): PeerConnection chiuso.");}
+    
+    if (pc && pc.connectionState !== "closed") { 
+        pc.close(); 
+        console.log("DEBUG (stopConversation): PeerConnection chiuso.");
+    }
     pc = null;
     
     startButton.disabled = false;
@@ -273,70 +292,147 @@ function stopConversation() { /* ... (identico all'ultima versione fornita) ... 
     console.log("DEBUG (stopConversation): Stato ripulito.");
 }
 
-function sendClientEvent(event) { /* ... (identico) ... */ 
-    if (dc && dc.readyState === "open") { dc.send(JSON.stringify(event));}
-    else { console.warn("DEBUG sendClientEvent: Data channel non aperto o non disponibile. Evento non inviato:", event.type);}
+function sendClientEvent(event) {
+    if (dc && dc.readyState === "open") { 
+        dc.send(JSON.stringify(event));
+    }
+    else { 
+        console.warn("DEBUG sendClientEvent: Data channel non aperto o non disponibile. Evento non inviato:", event.type);
+    }
 }
-function addTranscript(speaker, textContent, itemId) { /* ... (identico, assicurati che "Sistema" sia nella history) ... */
+
+function addTranscript(speaker, textContent, itemId) {
     const uniqueId = `${speaker.toLowerCase().replace(/\s+/g, '-')}-${itemId || Date.now()}`;
     let div = document.getElementById(uniqueId);
     const displayName = (speaker === 'Tu' || speaker === 'Alejandro') ? 'Alejandro' : (speaker === 'AI' || speaker === 'Aiko') ? 'Aiko' : speaker;
     const className = (speaker === 'Tu' || speaker === 'Alejandro') ? 'tu' : (speaker === 'AI' || speaker === 'Aiko') ? 'ai' : 'sistema';
-    if (!div) { div = document.createElement('div'); div.id = uniqueId; div.className = className; transcriptsDiv.appendChild(div); }
-    const strong = document.createElement('strong'); strong.textContent = `${displayName}: `; div.innerHTML = ''; div.appendChild(strong); div.appendChild(document.createTextNode(textContent));
-    transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight; console.log(`DEBUG (addTranscript): Speaker='${displayName}', Content='${textContent.substring(0,50)}...'`);
+    
+    if (!div) { 
+        div = document.createElement('div'); 
+        div.id = uniqueId; 
+        div.className = className; 
+        transcriptsDiv.appendChild(div); 
+    }
+    
+    const strong = document.createElement('strong'); 
+    strong.textContent = `${displayName}: `; 
+    div.innerHTML = ''; 
+    div.appendChild(strong); 
+    div.appendChild(document.createTextNode(textContent));
+    transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight; 
+    
+    console.log(`DEBUG (addTranscript): Speaker='${displayName}', Content='${textContent.substring(0,50)}...'`);
+    
     if ((speaker === "Tu" || speaker === "AI" || speaker === "Aiko" || speaker === "Alejandro" || speaker === "Sistema") && typeof textContent === 'string' && textContent.trim() !== '') {
         const speakerForHistory = (speaker === 'Tu' || speaker === 'Alejandro') ? 'Tu' : (speaker === 'AI' || speaker === 'Aiko') ? 'AI' : speaker;
         const lastEntry = currentConversationHistory[currentConversationHistory.length -1];
-        if (lastEntry && lastEntry.itemId === itemId && lastEntry.content === textContent) {} else {
+        if (lastEntry && lastEntry.itemId === itemId && lastEntry.content === textContent) {
+            // Skip duplicate
+        } else {
             console.log(`DEBUG (addTranscript): AGGIUNGO A HISTORY (per Supabase): ${speakerForHistory}, "${textContent.substring(0,50)}..."`);
             currentConversationHistory.push({ speaker: speakerForHistory, content: textContent, itemId: itemId });
         }
-    } else { console.warn(`DEBUG (addTranscript): SALTO HISTORY: Speaker ${speaker}, Content "${textContent}"`);}
+    } else { 
+        console.warn(`DEBUG (addTranscript): SALTO HISTORY: Speaker ${speaker}, Content "${textContent}"`);
+    }
 }
-function appendToTranscript(speaker, textDelta, itemId) { /* ... (identico) ... */
+
+function appendToTranscript(speaker, textDelta, itemId) {
     const domSpeakerClass = (speaker === "Aiko" || speaker === "AI") ? "ai" : speaker.toLowerCase().replace(/\s+/g, '-');
     const displaySpeakerName = "Aiko"; 
-    const domItemId = itemId || 'ai-streaming-response'; const uniqueId = `${domSpeakerClass}-${domItemId}`;
-    let div = document.getElementById(uniqueId); let isNew = false;
-    if (!div) { isNew = true; div = document.createElement('div'); div.id = uniqueId; div.className = domSpeakerClass; const strong = document.createElement('strong'); strong.textContent = `${displaySpeakerName}: `; div.appendChild(strong); transcriptsDiv.appendChild(div); }
-    div.appendChild(document.createTextNode(textDelta)); transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight;
+    const domItemId = itemId || 'ai-streaming-response'; 
+    const uniqueId = `${domSpeakerClass}-${domItemId}`;
+    let div = document.getElementById(uniqueId); 
+    let isNew = false;
+    
+    if (!div) { 
+        isNew = true; 
+        div = document.createElement('div'); 
+        div.id = uniqueId; 
+        div.className = domSpeakerClass; 
+        const strong = document.createElement('strong'); 
+        strong.textContent = `${displaySpeakerName}: `; 
+        div.appendChild(strong); 
+        transcriptsDiv.appendChild(div); 
+    }
+    
+    div.appendChild(document.createTextNode(textDelta)); 
+    transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight;
+    
     if (speaker === "AI" || speaker === "Aiko") {
         const lastEntry = currentConversationHistory.length > 0 ? currentConversationHistory[currentConversationHistory.length - 1] : null;
         if (isNew || !lastEntry || lastEntry.speaker !== "AI" || lastEntry.itemId !== domItemId) { 
             if (typeof textDelta === 'string' && textDelta.trim() !== '') {
-                 console.log(`DEBUG (appendToTranscript): NUOVA ENTRY HISTORY (AI per Supabase): "${textDelta.substring(0,50)}..." (itemId: ${domItemId})`);
+                console.log(`DEBUG (appendToTranscript): NUOVA ENTRY HISTORY (AI per Supabase): "${textDelta.substring(0,50)}..." (itemId: ${domItemId})`);
                 currentConversationHistory.push({ speaker: "AI", content: textDelta, itemId: domItemId });
             }
         } else if (lastEntry.speaker === "AI" && lastEntry.itemId === domItemId) { 
-            if (typeof textDelta === 'string' && textDelta.trim() !== '') { lastEntry.content += textDelta; }
+            if (typeof textDelta === 'string' && textDelta.trim() !== '') { 
+                lastEntry.content += textDelta; 
+            }
         }
     }
 }
-async function handleFunctionCall(functionCall) { /* ... (identico) ... */ 
+
+async function handleFunctionCall(functionCall) {
     if (functionCall.name === "cerca_nella_mia_memoria_personale") {
         if (statusDiv) statusDiv.textContent = "Aiko sta cercando nei ricordi...";
         console.log("DEBUG (handleFnCall): cerca_nella_mia_memoria_personale. Args:", functionCall.arguments);
         try {
-            const args = JSON.parse(functionCall.arguments); const searchQuery = args.termini_di_ricerca;
+            const args = JSON.parse(functionCall.arguments); 
+            const searchQuery = args.termini_di_ricerca;
             addTranscript("Sistema", `Aiko cerca: "${searchQuery}"...`, `search-${functionCall.call_id}`);
+            
             const searchResponse = await fetch(`${SEARCH_MEMORY_API_ENDPOINT}?query=${encodeURIComponent(searchQuery)}`);
-            let resultsForAI = "Errore durante la ricerca o nessun risultato."; let displayResults = "Errore durante la ricerca.";
+            let resultsForAI = "Errore durante la ricerca o nessun risultato."; 
+            let displayResults = "Errore durante la ricerca.";
+            
             if (searchResponse.ok) {
-                try { const searchData = await searchResponse.json(); resultsForAI = searchData.results || "Nessun ricordo trovato per quei termini."; displayResults = resultsForAI; }
-                catch (parseError) { console.warn("DEBUG (handleFnCall): Risposta da /api/searchMemory non JSON.", parseError); const textResponse = await searchResponse.text(); resultsForAI = `Risposta testuale (errore?): ${textResponse.substring(0, 200)}`; displayResults = resultsForAI;}
+                try { 
+                    const searchData = await searchResponse.json(); 
+                    resultsForAI = searchData.results || "Nessun ricordo trovato per quei termini."; 
+                    displayResults = resultsForAI; 
+                }
+                catch (parseError) { 
+                    console.warn("DEBUG (handleFnCall): Risposta da /api/searchMemory non JSON.", parseError); 
+                    const textResponse = await searchResponse.text(); 
+                    resultsForAI = `Risposta testuale (errore?): ${textResponse.substring(0, 200)}`; 
+                    displayResults = resultsForAI;
+                }
             } else {
                 let errorText = `Errore server ${searchResponse.status}`;
-                try { const errorData = await searchResponse.json(); errorText = `Errore ricerca (${searchResponse.status}): ${errorData.error || ""}`; } catch (e) { errorText = `Errore server ${searchResponse.status}: ${await searchResponse.text().catch(() => "")}`; }
-                resultsForAI = errorText; displayResults = resultsForAI;
+                try { 
+                    const errorData = await searchResponse.json(); 
+                    errorText = `Errore ricerca (${searchResponse.status}): ${errorData.error || ""}`; 
+                } catch (e) { 
+                    errorText = `Errore server ${searchResponse.status}: ${await searchResponse.text().catch(() => "")}`; 
+                }
+                resultsForAI = errorText; 
+                displayResults = resultsForAI;
             }
+            
             addTranscript("Sistema", `Risultati per "${searchQuery}": ${displayResults.substring(0, 200)}${displayResults.length > 200 ? "..." : ""}`, `search-res-${functionCall.call_id}`);
-            sendClientEvent({ type: "conversation.item.create", item: { type: "function_call_output", call_id: functionCall.call_id, output: JSON.stringify({ results: resultsForAI }) } });
+            sendClientEvent({ 
+                type: "conversation.item.create", 
+                item: { 
+                    type: "function_call_output", 
+                    call_id: functionCall.call_id, 
+                    output: JSON.stringify({ results: resultsForAI }) 
+                } 
+            });
+            
             if (statusDiv) statusDiv.textContent = "Aiko ha consultato la memoria.";
         } catch (e) {
             console.error("DEBUG (handleFnCall) Errore:", e);
             addTranscript("Sistema", `Errore critico strumento ricerca: ${e.message}`, `search-catch-${functionCall.call_id}`);
-            sendClientEvent({ type: "conversation.item.create", item: { type: "function_call_output", call_id: functionCall.call_id, output: JSON.stringify({ error: "Errore tecnico nello strumento di ricerca." }) } });
+            sendClientEvent({ 
+                type: "conversation.item.create", 
+                item: { 
+                    type: "function_call_output", 
+                    call_id: functionCall.call_id, 
+                    output: JSON.stringify({ error: "Errore tecnico nello strumento di ricerca." }) 
+                } 
+            });
         }
     }
 }
@@ -450,12 +546,26 @@ function handleServerEvent(event) {
                 }
             }
             break;
-        case "error": /* ... (gestione errori invariata) ... */
-            console.error("Errore OpenAI Realtime:", JSON.stringify(event, null, 2)); let errorMessage = "Errore OpenAI sconosciuto"; let errorCode = "unknown_error";
-            if (event.error) { errorMessage = event.error.message || JSON.stringify(event.error); errorCode = event.error.code || errorCode; } else { errorMessage = event.message || errorMessage; errorCode = event.code || errorCode; }
+        case "error":
+            console.error("Errore OpenAI Realtime:", JSON.stringify(event, null, 2)); 
+            let errorMessage = "Errore OpenAI sconosciuto"; 
+            let errorCode = "unknown_error";
+            
+            if (event.error) { 
+                errorMessage = event.error.message || JSON.stringify(event.error); 
+                errorCode = event.error.code || errorCode; 
+            } else { 
+                errorMessage = event.message || errorMessage; 
+                errorCode = event.code || errorCode; 
+            }
+            
             if (statusDiv) statusDiv.textContent = `Errore OpenAI: ${errorMessage.substring(0, 60)}`;
             const criticalErrorCodes = ["session_expired", "token_expired", "session_not_found", "connection_closed", "session_failed", "invalid_request_error", "authentication_error", "api_error", "invalid_api_key", "rate_limit_exceeded"];
-            if (criticalErrorCodes.includes(errorCode) && !saveCurrentSessionHistoryAndStop.called) { if (statusDiv) statusDiv.textContent += " Sessione terminata o errore grave. Provo a salvare."; saveCurrentSessionHistoryAndStop(); }
+            
+            if (criticalErrorCodes.includes(errorCode) && !saveCurrentSessionHistoryAndStop.called) { 
+                if (statusDiv) statusDiv.textContent += " Sessione terminata o errore grave. Provo a salvare."; 
+                saveCurrentSessionHistoryAndStop(); 
+            }
             break;
         case "input_audio_buffer.committed": case "rate_limits.updated": case "response.output_item.added": case "response.content_part.added": case "response.audio.done": case "response.audio_transcript.done": case "response.content_part.done": case "response.output_item.done": case "output_audio_buffer.started": case "response.function_call_arguments.delta": case "response.function_call_arguments.done": break;
         case "output_audio_buffer.stopped": 

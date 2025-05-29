@@ -1,0 +1,26 @@
+{
+  "name": "aiko",
+  "version": "1.0.0",
+  "description": "Aiko - Assistente AI conversazionale con memoria persistente",
+  "private": true,
+  "scripts": {
+    "install": "cd api && npm install",
+    "start": "cd api && npm start",
+    "dev": "cd api && npm run dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/aiko"
+  },
+  "keywords": [
+    "ai",
+    "assistant",
+    "openai",
+    "realtime",
+    "voice",
+    "conversation",
+    "supabase"
+  ],
+  "author": "Alejandro",
+  "license": "MIT"
+} 
