@@ -14,6 +14,8 @@ const SUMMARY_API_ENDPOINT = "/api/generateContextSummary";
 const EXTRACT_INFO_API_ENDPOINT = "/api/extractImportantInfo";
 const SAVE_IMPORTANT_INFO_API_ENDPOINT = "/api/saveImportantInfo";
 const GET_IMPORTANT_INFO_API_ENDPOINT = "/api/getImportantInfo";
+const MANAGE_MEMORY_API_ENDPOINT = "/api/manageMemory";
+const USER_PROFILE_API_ENDPOINT = "/api/userProfile";
 
 let pc;
 let dc;
@@ -28,6 +30,8 @@ let isRecordingForWhisper = false;
 let lastTranscriptionAttemptPromise = Promise.resolve(); // Aggiunta per tracciare l'ultima trascrizione
 
 let currentConversationHistory = [];
+let sessionStartTime = null;
+let sessionTopics = new Set();
 
 async function getContextSummary() {
     if (statusDiv) statusDiv.textContent = "Analizzo contesto generale...";
@@ -97,6 +101,8 @@ async function startConversation() {
     currentOpenAISessionId = null; 
     audioChunks = [];
     isRecordingForWhisper = false;
+    sessionStartTime = new Date();
+    sessionTopics.clear();
     if (whisperGracePeriodTimer) clearTimeout(whisperGracePeriodTimer);
     console.log("DEBUG: Nuova conversazione.");
 
@@ -275,6 +281,41 @@ async function saveCurrentSessionHistoryAndStop() {
             console.error("Errore estrazione informazioni importanti:", e);
         }
         
+        // 3. NUOVO: Salva metadati della sessione
+        try {
+            const sessionEnd = new Date();
+            const sentiment = analyzeSessionSentiment(historyToSave);
+            
+            await fetch('/api/sessionMetadata', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_start: sessionStartTime,
+                    session_end: sessionEnd,
+                    messages_count: historyToSave.length,
+                    topics: Array.from(sessionTopics),
+                    sentiment: sentiment,
+                    key_insights: extractKeyInsights(historyToSave)
+                })
+            });
+        } catch (e) {
+            console.error("Errore salvataggio metadati sessione:", e);
+        }
+        
+        // 4. NUOVO: Aggiorna profilo utente periodicamente
+        try {
+            // Aggiorna il profilo ogni 10 conversazioni o una volta al giorno
+            const shouldUpdateProfile = savedCount > 0 && Math.random() < 0.1; // 10% di probabilità
+            if (shouldUpdateProfile) {
+                console.log("DEBUG: Aggiornamento profilo utente...");
+                await fetch(USER_PROFILE_API_ENDPOINT, {
+                    method: 'POST'
+                });
+            }
+        } catch (e) {
+            console.error("Errore aggiornamento profilo:", e);
+        }
+        
         console.log(`DEBUG (save): ${savedCount} entries inviate per il salvataggio su ${historyToSave.length}.`);
         if (statusDiv) statusDiv.textContent = `Memoria aggiornata (${savedCount} voci).`;
     } else {
@@ -384,6 +425,16 @@ function addTranscript(speaker, textContent, itemId) {
         }
     } else { 
         console.warn(`DEBUG (addTranscript): SALTO HISTORY: Speaker ${speaker}, Content "${textContent}"`);
+    }
+
+    // NUOVO: Estrai argomenti per i metadati della sessione
+    if (textContent.length > 20) {
+        const words = textContent.toLowerCase().split(/\s+/);
+        words.forEach(word => {
+            if (word.length > 5 && !['quando', 'perché', 'come', 'dove', 'cosa', 'questo', 'quello'].includes(word)) {
+                sessionTopics.add(word);
+            }
+        });
     }
 }
 
@@ -661,3 +712,38 @@ stopButton.addEventListener('click', () => {
 window.addEventListener('beforeunload', (event) => { if (stopButton.disabled === false) { console.log("DEBUG: Evento beforeunload, conversazione attiva."); }});
 
 stopConversation();
+
+// NUOVE funzioni helper
+function analyzeSessionSentiment(history) {
+    // Analizza il sentiment generale della conversazione
+    let positiveWords = 0;
+    let negativeWords = 0;
+    
+    const positive = ['bene', 'buono', 'felice', 'grazie', 'perfetto', 'ottimo', 'bravo', 'bello'];
+    const negative = ['problema', 'errore', 'male', 'difficile', 'non funziona', 'sbagliato'];
+    
+    history.forEach(entry => {
+        const text = entry.content.toLowerCase();
+        positive.forEach(word => {
+            if (text.includes(word)) positiveWords++;
+        });
+        negative.forEach(word => {
+            if (text.includes(word)) negativeWords++;
+        });
+    });
+    
+    if (positiveWords > negativeWords * 2) return 'positivo';
+    if (negativeWords > positiveWords * 2) return 'negativo';
+    return 'neutro';
+}
+
+function extractKeyInsights(history) {
+    // Estrai le frasi più lunghe e significative
+    const insights = history
+        .filter(entry => entry.content.length > 50)
+        .map(entry => entry.content)
+        .slice(0, 3)
+        .join(' | ');
+    
+    return insights.substring(0, 500);
+}

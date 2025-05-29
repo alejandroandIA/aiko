@@ -14,6 +14,11 @@
     --border-radius: 12px;      /* Bordi più arrotondati */
     --box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
     --font-family: 'Roboto', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    
+    /* Variabili mancanti */
+    --primary-gradient: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.15);
+    --radius-lg: 20px;
 }
 
 * {
@@ -49,17 +54,39 @@ body {
 }
 
 .app-header {
-    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-    color: var(--btn-text-color);
-    padding: 18px 20px;
+    background: var(--primary-gradient);
+    color: white;
+    padding: 1.5rem 2rem;
     text-align: center;
-    border-bottom: 1px solid rgba(0,0,0,0.05);
+    box-shadow: var(--shadow-lg);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    position: relative;
 }
 
 .app-header h1 {
-    font-size: 1.6em;
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+}
+
+.memory-link {
+    position: absolute;
+    top: 1.5rem;
+    right: 2rem;
+    color: white;
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: var(--radius-lg);
+    transition: all 0.3s ease;
     font-weight: 500;
-    letter-spacing: 0.5px;
+}
+
+.memory-link:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: white;
+    transform: translateY(-2px);
 }
 
 .chat-main {
