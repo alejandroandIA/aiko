@@ -59,6 +59,7 @@ Clicca su **"Deploy"** e Vercel farà tutto automaticamente!
 Nel tuo progetto Supabase, esegui questa query SQL:
 
 ```sql
+-- Tabella principale per la cronologia chat
 CREATE TABLE chat_history (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   speaker TEXT NOT NULL,
@@ -66,9 +67,36 @@ CREATE TABLE chat_history (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Tabella per le informazioni importanti estratte
+CREATE TABLE important_info (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  type TEXT NOT NULL CHECK (type IN ('famiglia', 'persona', 'data', 'luogo', 'preferenza', 'progetto', 'altro')),
+  info TEXT NOT NULL,
+  context TEXT,
+  confidence TEXT CHECK (confidence IN ('alta', 'media', 'bassa')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Indici per ricerche efficienti
 CREATE INDEX idx_chat_history_created_at ON chat_history(created_at DESC);
 CREATE INDEX idx_chat_history_speaker ON chat_history(speaker);
+CREATE INDEX idx_important_info_type ON important_info(type);
+CREATE INDEX idx_important_info_created_at ON important_info(created_at DESC);
+
+-- Trigger per aggiornare updated_at
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_important_info_updated_at
+BEFORE UPDATE ON important_info
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
 ```
 
 ## 📁 Struttura del Progetto

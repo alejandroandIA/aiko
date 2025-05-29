@@ -11,6 +11,9 @@ const SESSION_API_ENDPOINT = "/api/session";
 const SAVE_MEMORY_API_ENDPOINT = "/api/saveToMemory";
 const SEARCH_MEMORY_API_ENDPOINT = "/api/searchMemory";
 const SUMMARY_API_ENDPOINT = "/api/generateContextSummary";
+const EXTRACT_INFO_API_ENDPOINT = "/api/extractImportantInfo";
+const SAVE_IMPORTANT_INFO_API_ENDPOINT = "/api/saveImportantInfo";
+const GET_IMPORTANT_INFO_API_ENDPOINT = "/api/getImportantInfo";
 
 let pc;
 let dc;
@@ -213,22 +216,22 @@ async function saveCurrentSessionHistoryAndStop() {
     }
 
     // Attendi il completamento dell'ultima trascrizione Whisper prima di procedere.
-    // Rimuovi il vecchio setTimeout.
-    // await new Promise(resolve => setTimeout(resolve, 1200)); 
     try {
         console.log("DEBUG (saveCurrentSessionHistoryAndStop): Attendo ultima potenziale trascrizione Whisper.");
         await lastTranscriptionAttemptPromise;
     } catch (e) {
         console.error("DEBUG (saveCurrentSessionHistoryAndStop): Errore durante attesa ultima trascrizione Whisper:", e);
-        // Nonostante l'errore, proviamo a salvare quello che abbiamo e a chiudere.
     }
     
     if (currentConversationHistory.length > 0) {
-        if (statusDiv) statusDiv.textContent = "Salvataggio memoria...";
+        if (statusDiv) statusDiv.textContent = "Salvataggio memoria e analisi conversazione...";
+        
+        // 1. Prima salva tutta la conversazione
         console.log(`DEBUG (save): Inizio salvataggio di ${currentConversationHistory.length} entries.`);
         let savedCount = 0;
         const historyToSave = [...currentConversationHistory];
         currentConversationHistory = []; 
+        
         for (const entry of historyToSave) {
             const isValid = entry && typeof entry.speaker === 'string' && entry.speaker.trim() !== '' && typeof entry.content === 'string' && entry.content.trim() !== '';
             if (!isValid) { console.warn("DEBUG (save): Salto entry non valida:", entry); continue; }
@@ -238,8 +241,42 @@ async function saveCurrentSessionHistoryAndStop() {
                 else { const errD = await resp.json().catch(() => ({error: "Errore parsing risposta server"})); console.error(`DEBUG (save): Errore server (${resp.status}):`, errD, "Entry:", entry); }
             } catch (err) { console.error("DEBUG (save): Errore fetch salvataggio:", err, "Entry:", entry); }
         }
+        
+        // 2. Estrai informazioni importanti dalla conversazione
+        try {
+            console.log("DEBUG: Estrazione informazioni importanti...");
+            const extractResp = await fetch(EXTRACT_INFO_API_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ conversation: historyToSave })
+            });
+            
+            if (extractResp.ok) {
+                const extractedData = await extractResp.json();
+                console.log("DEBUG: Informazioni estratte:", extractedData);
+                
+                // Salva ogni informazione importante
+                if (extractedData.important_facts && extractedData.important_facts.length > 0) {
+                    for (const fact of extractedData.important_facts) {
+                        try {
+                            await fetch(SAVE_IMPORTANT_INFO_API_ENDPOINT, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(fact)
+                            });
+                        } catch (e) {
+                            console.error("Errore salvataggio informazione importante:", e);
+                        }
+                    }
+                    console.log(`DEBUG: ${extractedData.important_facts.length} informazioni importanti salvate`);
+                }
+            }
+        } catch (e) {
+            console.error("Errore estrazione informazioni importanti:", e);
+        }
+        
         console.log(`DEBUG (save): ${savedCount} entries inviate per il salvataggio su ${historyToSave.length}.`);
-        if (statusDiv) statusDiv.textContent = `Salvataggio completato (${savedCount} voci).`;
+        if (statusDiv) statusDiv.textContent = `Memoria aggiornata (${savedCount} voci).`;
     } else {
         console.log("DEBUG (save): Nessuna entry nella cronologia da salvare.");
         if (statusDiv && !statusDiv.textContent.includes("Errore")) statusDiv.textContent = "Nessuna nuova memoria da salvare.";
@@ -302,6 +339,19 @@ function sendClientEvent(event) {
 }
 
 function addTranscript(speaker, textContent, itemId) {
+    // Non mostrare le trascrizioni duplicate o fallite
+    if (speaker === "Tu" && (
+        textContent.includes("(Trascrizione Whisper fallita") || 
+        textContent.includes("(Audio troppo breve") ||
+        textContent.includes("(Errore grave durante trascrizione")
+    )) {
+        // Salva nella history ma non mostrare nell'UI
+        if (typeof textContent === 'string' && textContent.trim() !== '') {
+            currentConversationHistory.push({ speaker: 'Tu', content: textContent, itemId: itemId });
+        }
+        return; // Non aggiungere al DOM
+    }
+    
     const uniqueId = `${speaker.toLowerCase().replace(/\s+/g, '-')}-${itemId || Date.now()}`;
     let div = document.getElementById(uniqueId);
     const displayName = (speaker === 'Tu' || speaker === 'Alejandro') ? 'Alejandro' : (speaker === 'AI' || speaker === 'Aiko') ? 'Aiko' : speaker;

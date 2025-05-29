@@ -5,7 +5,7 @@ import { USER_NAME, AI_NAME } from '../src/config/aiConfig.mjs';
 export default async function handler(req, res) {
     if (req.method !== 'GET') {
         res.setHeader('Allow', ['GET']);
-        return res.status(405).end('Method Not Allowed');
+        return res.status(405).end(`Method ${req.method} Not Allowed`);
     }
 
     const supabaseUrl = process.env.SUPABASE_URL;
@@ -13,74 +13,134 @@ export default async function handler(req, res) {
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
     if (!supabaseUrl || !supabaseServiceKey || !OPENAI_API_KEY) {
-        console.error('generateContextSummary: Variabili ambiente mancanti.');
-        return res.status(500).json({ error: 'Configurazione server incompleta.', summary: "" });
+        console.error('Variabili d\'ambiente mancanti.');
+        return res.status(500).json({ error: 'Configurazione del server incompleta.' });
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     try {
-        // Tentiamo di recuperare un numero maggiore di messaggi per un riassunto più ricco
-        const { data: chatHistory, error: historyError } = await supabase
-            .from('memoria_chat')
+        // 1. Recupera le informazioni importanti
+        const { data: importantInfo, error: infoError } = await supabase
+            .from('important_info')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (infoError) {
+            console.warn('Errore recupero important_info:', infoError);
+        }
+
+        // 2. Recupera le conversazioni recenti (ultime 48 ore)
+        const fortyEightHoursAgo = new Date();
+        fortyEightHoursAgo.setHours(fortyEightHoursAgo.getHours() - 48);
+        
+        const { data: recentHistory, error: historyError } = await supabase
+            .from('chat_history')
             .select('speaker, content, created_at')
+            .gte('created_at', fortyEightHoursAgo.toISOString())
             .order('created_at', { ascending: false })
-            .limit(40); // Aumentato a 40
+            .limit(50);
 
         if (historyError) {
-            console.error('Errore recupero cronologia per riassunto:', historyError);
-            return res.status(200).json({ summary: `Nota per ${AI_NAME}: Errore nel recuperare la cronologia. Procedi con cautela.` });
+            console.error('Errore recupero cronologia chat:', historyError);
+            return res.status(500).json({ error: 'Errore nel recupero della cronologia.' });
         }
 
-        if (!chatHistory || chatHistory.length === 0) {
-            return res.status(200).json({ summary: "" });
+        // 3. Prepara il contesto per GPT
+        let contextText = "";
+
+        // Aggiungi informazioni importanti
+        if (importantInfo && importantInfo.length > 0) {
+            contextText += "INFORMAZIONI IMPORTANTI SALVATE:\n";
+            
+            const grouped = {};
+            importantInfo.forEach(item => {
+                if (!grouped[item.type]) grouped[item.type] = [];
+                grouped[item.type].push(item);
+            });
+
+            for (const [type, items] of Object.entries(grouped)) {
+                contextText += `\n${type.toUpperCase()}:\n`;
+                items.forEach(item => {
+                    contextText += `- ${item.info}`;
+                    if (item.context) contextText += ` (${item.context})`;
+                    contextText += '\n';
+                });
+            }
+            contextText += "\n---\n\n";
         }
 
-        // Diamo priorità alle ultime interazioni, ma cerchiamo di avere un mix
-        const formattedHistory = chatHistory
-            .reverse() // Ordine cronologico per il prompt
-            .map(entry => `${entry.speaker === 'Tu' ? USER_NAME : AI_NAME} (il ${new Date(entry.created_at).toLocaleDateString('it-IT')}): ${entry.content}`)
-            .join('\n');
-
-        if (formattedHistory.trim() === "") {
-            return res.status(200).json({ summary: "" });
+        // Aggiungi conversazioni recenti
+        if (recentHistory && recentHistory.length > 0) {
+            contextText += "CONVERSAZIONI RECENTI:\n";
+            recentHistory.reverse().forEach(msg => {
+                const speaker = msg.speaker === 'Tu' ? USER_NAME : msg.speaker === 'AI' ? AI_NAME : msg.speaker;
+                contextText += `${speaker}: ${msg.content}\n`;
+            });
         }
 
-        const summaryPrompt = `Sei ${AI_NAME}, un'IA che sta per iniziare una nuova conversazione con ${USER_NAME}. Per aiutarti a ricordare, rileggi la seguente cronologia delle vostre interazioni passate (principalmente le tue risposte, ma cerca anche indizi su ${USER_NAME} se presenti). Estrai i fatti e i dettagli più salienti riguardanti ${USER_NAME} (sue preferenze, dati personali condivisi, argomenti importanti per lui) e i temi principali delle TUE risposte che potrebbero essere rilevanti per continuare la conversazione in modo coerente e personale. Formula un riassunto molto conciso (massimo 200-250 parole) sotto forma di "Appunti per Aiko su Alejandro".
+        if (!contextText) {
+            return res.status(200).json({ 
+                summary: "Non ci sono conversazioni recenti o informazioni salvate.",
+                important_facts: []
+            });
+        }
 
-Cronologia chat rilevante:
-${formattedHistory}
-
-Appunti per Aiko su Alejandro (massimo 200-250 parole, focalizzati su ciò che è utile ricordare per la prossima interazione):`;
-
-        const openaiSummaryResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+        // 4. Genera il riassunto con GPT
+        const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
-            headers: { "Authorization": `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+            headers: { 
+                "Authorization": `Bearer ${OPENAI_API_KEY}`, 
+                "Content-Type": "application/json" 
+            },
             body: JSON.stringify({
-                model: "gpt-4o",
+                model: "gpt-4o-mini",
                 messages: [
-                    { role: "system", content: `Sei un eccellente assistente nel creare appunti concisi da conversazioni passate per un'IA di nome ${AI_NAME} che parla con ${USER_NAME}.` },
-                    { role: "user", content: summaryPrompt }
+                    {
+                        role: "system",
+                        content: `Sei ${AI_NAME}. Genera un riassunto delle informazioni e conversazioni recenti per ricordare il contesto quando parlerai con ${USER_NAME}.
+
+FOCUS su:
+1. Informazioni personali importanti (nomi, relazioni, preferenze)
+2. Argomenti di conversazione in corso
+3. Progetti o attività menzionate
+4. Domande rimaste in sospeso
+
+Il riassunto deve essere in PRIMA PERSONA come se fossi tu (${AI_NAME}) che ricordi.
+Massimo 200 parole, molto conciso e diretto.`
+                    },
+                    {
+                        role: "user",
+                        content: contextText
+                    }
                 ],
-                temperature: 0.2,
-                max_tokens: 300,
-            }),
+                temperature: 0.3,
+                max_tokens: 300
+            })
         });
 
-        if (!openaiSummaryResponse.ok) {
-            const errorData = await openaiSummaryResponse.json().catch(() => null);
-            console.error('Errore API OpenAI riassunto:', openaiSummaryResponse.status, errorData);
-            return res.status(200).json({ summary: `Nota per ${AI_NAME}: Impossibile generare appunti dalle conversazioni precedenti.` });
+        if (!openaiResponse.ok) {
+            const errorData = await openaiResponse.json();
+            console.error('Errore API OpenAI:', errorData);
+            return res.status(500).json({ error: 'Errore generazione riassunto' });
         }
-        const summaryData = await openaiSummaryResponse.json();
-        let summaryText = summaryData.choices?.[0]?.message?.content?.trim() || "";
 
-        console.log("generateContextSummary: Riassunto/Appunti generati:", summaryText);
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        return res.status(200).json({ summary: summaryText });
+        const summaryData = await openaiResponse.json();
+        const summary = summaryData.choices[0].message.content;
 
-    } catch (e) {
-        console.error('Errore generico generateContextSummary:', e);
-        return res.status(500).json({ error: 'Errore interno server riassunto.', summary: `Nota per ${AI_NAME}: Errore interno server nel generare appunti.` });
+        console.log('generateContextSummary: Riassunto generato con successo');
+
+        return res.status(200).json({ 
+            summary,
+            important_facts_count: importantInfo?.length || 0,
+            recent_messages_count: recentHistory?.length || 0
+        });
+
+    } catch (error) {
+        console.error('Errore in generateContextSummary:', error);
+        return res.status(500).json({ 
+            error: 'Errore interno del server',
+            details: error.message 
+        });
     }
 }
