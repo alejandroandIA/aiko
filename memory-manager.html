@@ -403,6 +403,13 @@
     </div>
     
     <script>
+        // Funzione per escape HTML e prevenire XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
         // Gestione tab
         function switchTab(tabName) {
             document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
@@ -446,10 +453,10 @@
                 
                 memoriesList.innerHTML = data.memories.map(memory => `
                     <div class="memory-card">
-                        <span class="memory-type type-${memory.type}">${memory.type}</span>
-                        <span class="memory-confidence confidence-${memory.confidence}">${memory.confidence}</span>
-                        <div class="memory-info">${memory.info}</div>
-                        ${memory.context ? `<div class="memory-context">${memory.context}</div>` : ''}
+                        <span class="memory-type type-${escapeHtml(memory.type)}">${escapeHtml(memory.type)}</span>
+                        <span class="memory-confidence confidence-${escapeHtml(memory.confidence)}">${escapeHtml(memory.confidence)}</span>
+                        <div class="memory-info">${escapeHtml(memory.info)}</div>
+                        ${memory.context ? `<div class="memory-context">${escapeHtml(memory.context)}</div>` : ''}
                         <div class="memory-actions">
                             <button class="btn btn-edit" onclick="editMemory('${memory.id}')">Modifica</button>
                             <button class="btn btn-delete" onclick="deleteMemory('${memory.id}')">Elimina</button>
@@ -494,8 +501,8 @@
                     html += '<div class="profile-section"><h3>Preferenze di Risposta</h3>';
                     profile.response_preferences.forEach(pref => {
                         html += `<div class="profile-item">
-                            <strong>${pref.preference}</strong> 
-                            <span class="confidence-${pref.confidence}">(${pref.confidence})</span>
+                            <strong>${escapeHtml(pref.preference)}</strong> 
+                            <span class="confidence-${escapeHtml(pref.confidence)}">(${escapeHtml(pref.confidence)})</span>
                         </div>`;
                     });
                     html += '</div>';
@@ -505,9 +512,9 @@
                 if (profile.communication_style) {
                     html += '<div class="profile-section"><h3>Stile Comunicativo</h3>';
                     html += `<div class="profile-item">
-                        Formalità: ${profile.communication_style.formality}<br>
-                        Umorismo: ${profile.communication_style.humor}<br>
-                        Livello tecnico: ${profile.communication_style.technical_level}
+                        Formalità: ${escapeHtml(profile.communication_style.formality)}<br>
+                        Umorismo: ${escapeHtml(profile.communication_style.humor)}<br>
+                        Livello tecnico: ${escapeHtml(profile.communication_style.technical_level)}
                     </div>`;
                     html += '</div>';
                 }
@@ -548,15 +555,15 @@
                     
                     return `
                         <div class="memory-card">
-                            <h4>${start.toLocaleString('it-IT')}</h4>
-                            <div>Messaggi: ${session.messages_count}</div>
-                            <div>Durata: ${duration} minuti</div>
+                            <h4>${escapeHtml(start.toLocaleString('it-IT'))}</h4>
+                            <div>Messaggi: ${escapeHtml(session.messages_count.toString())}</div>
+                            <div>Durata: ${escapeHtml(duration.toString())} minuti</div>
                             <div>Sentiment: <span class="confidence-${
                                 session.sentiment === 'positivo' ? 'alta' : 
                                 session.sentiment === 'negativo' ? 'bassa' : 'media'
-                            }">${session.sentiment}</span></div>
+                            }">${escapeHtml(session.sentiment)}</span></div>
                             ${session.topics?.length > 0 ? 
-                                `<div>Argomenti: ${session.topics.slice(0, 5).join(', ')}</div>` : ''}
+                                `<div>Argomenti: ${escapeHtml(session.topics.slice(0, 5).join(', '))}</div>` : ''}
                         </div>
                     `;
                 }).join('');
