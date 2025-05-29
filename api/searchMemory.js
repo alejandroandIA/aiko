@@ -26,29 +26,31 @@ export default async function handler(req, res) {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     try {
-        const { query, fetchLast } = req.query; // Legge entrambi i parametri
+        const query = req.query.query || req.query.q || '';
+        if (!query || query.trim() === '') {
+            return res.status(400).json({ error: 'Query di ricerca mancante' });
+        }
 
-        let data, error;
+        console.log('DEBUG api/searchMemory: Searching for term:', query);
 
-        if (fetchLast && !isNaN(parseInt(fetchLast))) {
-            const limit = parseInt(fetchLast);
-            console.log(`DEBUG api/searchMemory: Fetching last ${limit} entries.`);
+        let { data, error } = await supabase
+            .from('memoria_chat')
+            .select('speaker, content, created_at')
+            .textSearch('content', query, {
+                type: 'websearch',
+                config: 'italian'
+            })
+            .order('created_at', { ascending: false })
+            .limit(10);
+
+        // Se la ricerca testuale non trova nulla, prova con ILIKE per maggiore flessibilità
+        if ((!data || data.length === 0) && !error) {
             ({ data, error } = await supabase
                 .from('memoria_chat')
                 .select('speaker, content, created_at')
+                .ilike('content', `%${query}%`)
                 .order('created_at', { ascending: false })
-                .limit(limit));
-        } else if (query && typeof query === 'string' && query.trim() !== '') {
-            const searchTerm = String(query).trim();
-            console.log(`DEBUG api/searchMemory: Searching for term: "${searchTerm}".`);
-            ({ data, error } = await supabase
-                .from('memoria_chat')
-                .select('speaker, content, created_at')
-                .ilike('content', `%${searchTerm}%`)
-                .order('created_at', { ascending: false })
-                .limit(10)); // Limite per la ricerca per termine
-        } else {
-            return res.status(400).json({ error: 'Parametro query o fetchLast richiesto e valido.' });
+                .limit(10));
         }
 
         if (error) {
@@ -62,7 +64,7 @@ export default async function handler(req, res) {
                   // Format più conciso per l'IA, include data e ora
                   return `[Memoria del ${new Date(item.created_at).toLocaleString('it-IT', {dateStyle: 'short', timeStyle: 'short'})} - ${speakerLabel}]: "${item.content}"`;
               }).join('\n---\n')
-            : (fetchLast ? `Nessuna memoria recente trovata.` : `Nessun ricordo trovato per i termini di ricerca: "${query}".`);
+            : `Nessun ricordo trovato per i termini di ricerca: "${query}".`;
 
         res.setHeader('Access-Control-Allow-Origin', '*');
         return res.status(200).json({ results: formattedResults });

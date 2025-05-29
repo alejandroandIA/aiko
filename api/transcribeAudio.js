@@ -83,12 +83,12 @@ export default async function handler(req, res) {
             contentType: clientContentType, // Questo è più per informazione, Whisper si basa sull'estensione
         });
         form.append('model', 'whisper-1');
-        // NON specificare 'language' per la rilevazione automatica
-        // form.append('response_format', 'verbose_json'); // Utile per ottenere la lingua rilevata
+        form.append('language', 'it'); // FORZA LA LINGUA ITALIANA per trascrizioni migliori
+        form.append('prompt', 'Conversazione in italiano tra Alejandro e Aiko.'); // Aiuta Whisper con il contesto
 
         console.log(`[${new Date().toISOString()}] DEBUG api/transcribeAudio: FormData preparato. Invio a OpenAI Whisper API...`);
 
-        const WHISPER_API_TIMEOUT_MS = 50000; // 50 secondi di timeout
+        const WHISPER_API_TIMEOUT_MS = 60000; // Aumento a 60 secondi
         let whisperResponse;
         const whisperCallStartTime = Date.now();
 

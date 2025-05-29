@@ -26,16 +26,18 @@ export default async function handler(req, res) {
 
     try {
         const { speaker, content } = req.body;
-        if (!speaker || typeof speaker !== 'string' || speaker.trim() === '' ||
-            !content || typeof content !== 'string' || content.trim() === '') {
-            console.warn('api/saveToMemory: Dati mancanti/vuoti. Body:', req.body);
-            return res.status(400).json({ error: 'Speaker e content richiesti e non vuoti.' });
+
+        // Validazione base
+        if (!speaker || !content) {
+            console.warn('api/saveToMemory: Dati mancanti. Speaker:', speaker, 'Content:', content ? content.substring(0, 50) : 'null');
+            return res.status(400).json({ error: 'Dati mancanti' });
         }
 
         const { data, error } = await supabase
             .from('memoria_chat')
-            .insert([{ speaker: String(speaker).trim(), content: String(content).trim() }])
-            .select();
+            .insert([
+                { speaker, content }
+            ]);
 
         if (error) {
             console.error('Errore Supabase (insert) api/saveToMemory:', error);

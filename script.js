@@ -581,6 +581,15 @@ function handleServerEvent(event) {
             const hasTextOutput = event.response.output?.some(part => part.type === 'text');
             const hasAudioOutput = event.response.output?.some(part => part.type === 'audio');
 
+            // Aggiungi la trascrizione di Aiko se c'è audio
+            if (hasAudioOutput) {
+                const audioOutput = event.response.output.find(part => part.type === 'audio');
+                if (audioOutput && audioOutput.transcript) {
+                    // Mostra la trascrizione di Aiko
+                    addTranscript("AI", audioOutput.transcript, event.response.id);
+                }
+            }
+
             if (hasTextOutput || hasAudioOutput) {
                  // Non impostare "Aiko ha finito" qui se c'è output audio, 
                  // perché output_audio_buffer.stopped lo gestirà.
