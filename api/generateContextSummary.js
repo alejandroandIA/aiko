@@ -35,7 +35,7 @@ export default async function handler(req, res) {
         fortyEightHoursAgo.setHours(fortyEightHoursAgo.getHours() - 48);
         
         const { data: recentHistory, error: historyError } = await supabase
-            .from('chat_history')
+            .from('memoria_chat')
             .select('speaker, content, created_at')
             .gte('created_at', fortyEightHoursAgo.toISOString())
             .order('created_at', { ascending: false })
