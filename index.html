@@ -3,58 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Conversazione con Aiko</title>
+    <title>Aiko - Conversazione Vocale</title>
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="app-container">
-        <header class="app-header">
-            <h1>Parla con Aiko</h1>
-            <!-- Link alla gestione memoria rimosso come da richiesta implicita di interfaccia unica -->
-            <!-- <a href="/memory-manager.html" class="memory-link">🧠 Gestione Memoria</a> -->
-        </header>
-
-        <main class="chat-main">
-            <div class="aiko-face-container">
-                <div id="aikoFace" class="aiko-face">
-                    <!-- Qui verrà simulato il volto di Aiko -->
-                    <div class="eye left-eye"></div>
-                    <div class="eye right-eye"></div>
-                    <div class="mouth"></div>
+        <div class="matrix-background" id="matrixCanvas"></div>
+        
+        <main class="main-content">
+            <!-- Visualizzazione viso di Aiko con effetto Matrix -->
+            <div class="aiko-container">
+                <div class="aiko-face-matrix" id="aikoFace">
+                    <canvas id="faceCanvas" width="300" height="300"></canvas>
+                    <div class="voice-indicator" id="voiceIndicator"></div>
                 </div>
+                <div class="aiko-name">AIKO</div>
             </div>
 
-            <div class="controls-container">
-                <button id="startButton" class="btn btn-start">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0-6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"></path></svg>
-                    <span>PARLA</span>
+            <!-- Controlli minimali -->
+            <div class="controls">
+                <button id="talkButton" class="control-btn talk-btn">
+                    <span class="btn-text">PARLA</span>
+                    <span class="btn-icon">🎙️</span>
                 </button>
-                <button id="stopButton" class="btn btn-stop" disabled>
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M6 18h12V6H6v12zM8 8h8v8H8V8z"></path></svg>
-                    <span>STOP</span>
+                <button id="endButton" class="control-btn end-btn" disabled>
+                    <span class="btn-text">CHIUDI</span>
+                    <span class="btn-icon">⏹️</span>
                 </button>
             </div>
 
-            <div id="status" class="status-bar">Pronto per iniziare una nuova avventura!</div>
-
-            <!-- Contenitore trascrizioni rimosso dalla visualizzazione principale -->
-            <!-- 
-            <div class="transcripts-container">
-                <div id="transcripts">
-                    <! -- Le trascrizioni appariranno qui -- >
-                </div>
-            </div>
-            -->
+            <!-- Status minimale -->
+            <div id="status" class="status-minimal"></div>
         </main>
 
         <audio id="aiAudioPlayer" style="display: none;"></audio>
-        <footer class="app-footer">
-            <p>Made by Alejandro</p>
-        </footer>
     </div>
+    
     <script src="script.js" type="module"></script>
 </body>
 </html>

@@ -1,6 +1,20 @@
 -- Schema completo database Aiko con sistema di memoria avanzato
 
--- Tabella principale per le conversazioni
+-- NUOVA TABELLA: Riassunti delle conversazioni invece di conversazioni complete
+CREATE TABLE IF NOT EXISTS conversation_summaries (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  summary TEXT NOT NULL,
+  key_points TEXT[],
+  emotions TEXT[],
+  topics TEXT[],
+  user_mentions JSONB,  -- Persone/luoghi/eventi menzionati dall'utente
+  conversation_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  messages_count INTEGER DEFAULT 0,
+  sentiment TEXT CHECK (sentiment IN ('positivo', 'neutro', 'negativo', 'misto')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Tabella memoria_chat ora solo per conversazione corrente/recente (non storico completo)
 CREATE TABLE IF NOT EXISTS memoria_chat (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   speaker TEXT NOT NULL,
@@ -69,6 +83,11 @@ CREATE INDEX IF NOT EXISTS idx_important_info_confidence ON important_info(confi
 CREATE INDEX IF NOT EXISTS idx_session_metadata_session_start ON session_metadata(session_start DESC);
 CREATE INDEX IF NOT EXISTS idx_session_metadata_topics ON session_metadata USING gin(topics);
 
+-- Nuovi indici per conversation_summaries
+CREATE INDEX IF NOT EXISTS idx_conversation_summaries_date ON conversation_summaries(conversation_date DESC);
+CREATE INDEX IF NOT EXISTS idx_conversation_summaries_topics ON conversation_summaries USING gin(topics);
+CREATE INDEX IF NOT EXISTS idx_conversation_summaries_summary ON conversation_summaries USING gin(to_tsvector('italian', summary));
+
 -- Trigger per aggiornare updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -124,5 +143,15 @@ BEGIN
     -- Elimina sessioni metadata vecchie
     DELETE FROM session_metadata
     WHERE session_start < NOW() - INTERVAL '1 day' * retention_days;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Nuova funzione per pulizia automatica memoria_chat (mantiene solo ultime 48 ore)
+CREATE OR REPLACE FUNCTION cleanup_temporary_chat()
+RETURNS void AS $$
+BEGIN
+    -- Mantiene solo le ultime 48 ore nella memoria_chat
+    DELETE FROM memoria_chat
+    WHERE created_at < NOW() - INTERVAL '48 hours';
 END;
 $$ LANGUAGE plpgsql; 

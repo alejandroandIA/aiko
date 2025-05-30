@@ -1,294 +1,236 @@
-/* style.css */
-:root {
-    --primary-color: #6a1b9a; /* Viola scuro */
-    --secondary-color: #9c27b0; /* Viola medio per bottoni */
-    --accent-color: #ffeb3b;    /* Giallo per accenti luminosi */
-    --text-color: #212121;      /* Nero quasi puro per testo principale */
-    --text-light: #757575;    /* Grigio per testo secondario */
-    --bg-color: #f3e5f5;       /* Sfondo lavanda molto chiaro */
-    --container-bg: #ffffff;
-    --btn-text-color: #ffffff;
-    --user-msg-bg: #e3f2fd;     /* Azzurro cielo per utente */
-    --ai-msg-bg: #f3e5f5;       /* Lavanda chiaro per AI (diverso da bg-color) */
-    --system-msg-bg: #eeeeee;   /* Grigio chiaro per sistema */
-    --border-radius: 12px;      /* Bordi più arrotondati */
-    --box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
-    --font-family: 'Roboto', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    
-    /* Variabili mancanti */
-    --primary-gradient: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-    --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.15);
-    --radius-lg: 20px;
-}
-
+/* Reset e variabili */
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
 
+:root {
+    --matrix-green: #00ff41;
+    --matrix-dark-green: #008f11;
+    --bg-black: #000000;
+    --bg-dark: #0a0a0a;
+    --text-light: #ffffff;
+    --accent-red: #ff0040;
+    --btn-shadow: 0 0 20px rgba(0, 255, 65, 0.5);
+}
+
 body {
-    font-family: var(--font-family);
-    background-color: var(--bg-color);
-    color: var(--text-color);
-    line-height: 1.6;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    min-height: 100vh;
-    padding: 15px;
-    font-size: 16px;
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg-black);
+    color: var(--text-light);
+    overflow: hidden;
+    height: 100vh;
+    position: relative;
 }
 
+/* Matrix Background */
+.matrix-background {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    opacity: 0.1;
+}
+
+/* Container principale */
 .app-container {
-    background-color: var(--container-bg);
-    border-radius: var(--border-radius);
-    box-shadow: var(--box-shadow);
-    width: 100%;
-    max-width: 700px;
-    overflow: hidden;
+    position: relative;
+    z-index: 2;
+    height: 100vh;
     display: flex;
-    flex-direction: column;
-    height: calc(100vh - 30px);
-    max-height: 95vh;
+    align-items: center;
+    justify-content: center;
 }
 
-.app-header {
-    background: var(--primary-gradient);
-    color: white;
-    padding: 1.5rem 2rem;
+.main-content {
     text-align: center;
-    box-shadow: var(--shadow-lg);
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    width: 100%;
+    max-width: 500px;
+    padding: 20px;
+}
+
+/* Aiko Face Container */
+.aiko-container {
+    margin-bottom: 60px;
     position: relative;
 }
 
-.app-header h1 {
-    margin: 0;
-    font-size: 2rem;
+.aiko-face-matrix {
+    width: 300px;
+    height: 300px;
+    margin: 0 auto;
+    position: relative;
+    border: 2px solid var(--matrix-green);
+    border-radius: 50%;
+    overflow: hidden;
+    box-shadow: 
+        0 0 50px var(--matrix-green),
+        inset 0 0 50px rgba(0, 255, 65, 0.2);
+    background: radial-gradient(circle, rgba(0, 255, 65, 0.1) 0%, transparent 70%);
+}
+
+#faceCanvas {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+/* Voice Indicator - pulsa quando Aiko parla */
+.voice-indicator {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 4px;
+    background: var(--matrix-green);
+    border-radius: 2px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.voice-indicator.active {
+    opacity: 1;
+    animation: voicePulse 0.5s ease-in-out infinite;
+}
+
+@keyframes voicePulse {
+    0%, 100% { transform: translateX(-50%) scaleX(1); }
+    50% { transform: translateX(-50%) scaleX(1.5); }
+}
+
+/* Nome Aiko */
+.aiko-name {
+    font-family: 'Orbitron', monospace;
+    font-size: 2.5rem;
+    font-weight: 900;
+    color: var(--matrix-green);
+    margin-top: 20px;
+    letter-spacing: 8px;
+    text-shadow: 
+        0 0 10px var(--matrix-green),
+        0 0 20px var(--matrix-green),
+        0 0 30px var(--matrix-green);
+    animation: textGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes textGlow {
+    from { opacity: 0.8; }
+    to { opacity: 1; }
+}
+
+/* Controlli */
+.controls {
+    display: flex;
+    gap: 40px;
+    justify-content: center;
+    margin-bottom: 40px;
+}
+
+.control-btn {
+    background: transparent;
+    border: 2px solid var(--matrix-green);
+    color: var(--matrix-green);
+    padding: 20px 40px;
+    font-family: 'Orbitron', monospace;
+    font-size: 1.1rem;
     font-weight: 700;
-    letter-spacing: -0.5px;
-}
-
-.memory-link {
-    position: absolute;
-    top: 1.5rem;
-    right: 2rem;
-    color: white;
-    text-decoration: none;
-    padding: 0.5rem 1rem;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-radius: var(--radius-lg);
-    transition: all 0.3s ease;
-    font-weight: 500;
-}
-
-.memory-link:hover {
-    background: rgba(255, 255, 255, 0.2);
-    border-color: white;
-    transform: translateY(-2px);
-}
-
-.chat-main {
-    padding: 15px;
-    display: flex;
-    flex-direction: column;
-    flex-grow: 1;
-    overflow: hidden;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.aiko-face-container {
-    flex-grow: 1;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 100%;
-    min-height: 150px;
-}
-
-.aiko-face {
-    width: 150px;
-    height: 150px;
-    background-color: var(--secondary-color);
-    border-radius: 50%;
-    position: relative;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    box-shadow: 0 0 20px rgba(0,0,0,0.2);
-    transition: transform 0.3s ease;
-}
-
-.aiko-face.talking {
-    transform: scale(1.05);
-}
-
-.eye {
-    width: 30px;
-    height: 30px;
-    background-color: white;
-    border-radius: 50%;
-    position: absolute;
-    top: 40px;
-}
-
-.left-eye {
-    left: 35px;
-}
-
-.right-eye {
-    right: 35px;
-}
-
-.mouth {
-    width: 70px;
-    height: 20px;
-    background-color: white;
-    border-radius: 0 0 30px 30px;
-    position: absolute;
-    bottom: 30px;
-    transition: height 0.2s ease;
-}
-
-.aiko-face.talking .mouth {
-    height: 30px;
-}
-
-.controls-container {
-    display: flex;
-    gap: 15px;
-    margin-bottom: 15px;
-    justify-content: center;
-    flex-wrap: wrap;
-}
-
-.btn {
-    font-family: var(--font-family);
-    font-weight: 500;
-    font-size: 1em;
-    border: none;
-    padding: 12px 22px;
-    border-radius: var(--border-radius);
+    letter-spacing: 2px;
     cursor: pointer;
-    transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
-    display: inline-flex;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    display: flex;
     align-items: center;
-    gap: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    gap: 10px;
 }
 
-.btn:hover:not(:disabled) {
+.control-btn:hover:not(:disabled) {
+    background: var(--matrix-green);
+    color: var(--bg-black);
+    box-shadow: var(--btn-shadow);
     transform: translateY(-2px);
-    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
 }
 
-.btn:active:not(:disabled) {
-    transform: translateY(0px);
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+.control-btn:active:not(:disabled) {
+    transform: translateY(0);
 }
 
-.btn:disabled {
-    background-color: #bdbdbd;
+.control-btn:disabled {
+    opacity: 0.3;
     cursor: not-allowed;
-    opacity: 0.7;
 }
 
-.btn-start {
-    background-color: var(--secondary-color);
-    color: var(--btn-text-color);
-}
-.btn-start:hover:not(:disabled) { background-color: var(--primary-color); }
-
-.btn-stop {
-    background-color: #f44336;
-    color: var(--btn-text-color);
-}
-.btn-stop:hover:not(:disabled) { background-color: #d32f2f; }
-
-.btn svg {
-    width: 22px;
-    height: 22px;
+.control-btn.end-btn {
+    border-color: var(--accent-red);
+    color: var(--accent-red);
 }
 
-.status-bar {
-    text-align: center;
-    margin-bottom: 15px;
-    padding: 8px;
-    font-style: italic;
-    color: var(--text-light);
-    background-color: #fafafa;
-    border-radius: calc(var(--border-radius) / 2);
-    font-size: 0.9em;
+.control-btn.end-btn:hover:not(:disabled) {
+    background: var(--accent-red);
+    color: var(--bg-black);
+    box-shadow: 0 0 20px rgba(255, 0, 64, 0.5);
 }
 
-.app-footer {
-    text-align: left;
-    padding: 10px 20px;
-    font-size: 0.75em;
-    color: var(--text-light);
-    background-color: var(--container-bg);
-    border-top: 1px solid #e0e0e0;
+.btn-icon {
+    font-size: 1.5rem;
 }
 
+/* Status */
+.status-minimal {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.9rem;
+    color: var(--matrix-dark-green);
+    min-height: 30px;
+    letter-spacing: 1px;
+    opacity: 0.8;
+}
+
+/* Animazione Matrix per il canvas del background */
+@keyframes matrixRain {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100%); }
+}
+
+/* Responsive */
 @media (max-width: 600px) {
-    body { padding: 0; font-size: 15px; }
-    .app-container { 
-        height: 100vh;
-        max-height: 100vh;
-        border-radius: 0; 
-        width: 100vw;
-        max-width: 100vw;
+    .aiko-face-matrix {
+        width: 250px;
+        height: 250px;
     }
-    .app-header {
-        padding: 1rem 1.5rem;
-        border-radius: 0;
+    
+    .aiko-name {
+        font-size: 2rem;
+        letter-spacing: 6px;
     }
-    .app-header h1 { font-size: 1.5rem; }
-    .chat-main { 
-        padding: 15px;
-        justify-content: space-around;
+    
+    .controls {
+        gap: 20px;
     }
+    
+    .control-btn {
+        padding: 15px 30px;
+        font-size: 1rem;
+    }
+}
 
-    .aiko-face-container {
-        min-height: 120px;
-    }
-    .aiko-face {
-        width: 120px;
-        height: 120px;
-    }
-    .eye {
-        width: 25px;
-        height: 25px;
-        top: 30px;
-    }
-    .left-eye { left: 25px; }
-    .right-eye { right: 25px; }
-    .mouth {
-        width: 50px;
-        height: 15px;
-        bottom: 25px;
-    }
-    .aiko-face.talking .mouth {
-        height: 25px;
-    }
+/* Animazione per quando Aiko sta processando */
+.processing {
+    animation: processingPulse 1s ease-in-out infinite;
+}
 
-    .controls-container { 
-        gap: 10px; 
-        flex-direction: row;
-        flex-wrap: nowrap;
-        width: 100%;
+@keyframes processingPulse {
+    0%, 100% { 
+        border-color: var(--matrix-green);
+        box-shadow: 0 0 50px var(--matrix-green);
     }
-    .btn { 
-        padding: 12px 10px;
-        font-size: 0.9em; 
-        flex-grow: 1;
-        text-align: center;
-    }
-    .app-footer {
-        padding: 8px 15px;
-        font-size: 0.7em;
+    50% { 
+        border-color: var(--matrix-dark-green);
+        box-shadow: 0 0 30px var(--matrix-dark-green);
     }
 }

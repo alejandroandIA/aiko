@@ -1,197 +1,133 @@
 // api/generateContextSummary.js
 import { createClient } from '@supabase/supabase-js';
-import { USER_NAME, AI_NAME } from '../src/config/aiConfig.mjs';
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export default async function handler(req, res) {
     if (req.method !== 'GET') {
-        res.setHeader('Allow', ['GET']);
-        return res.status(405).end(`Method ${req.method} Not Allowed`);
+        return res.status(405).json({ error: 'Metodo non consentito. Usa GET.' });
     }
-
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
-    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
-    if (!supabaseUrl || !supabaseServiceKey || !OPENAI_API_KEY) {
-        console.error('Variabili d\'ambiente mancanti.');
-        return res.status(500).json({ error: 'Configurazione del server incompleta.' });
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     try {
-        // 1. Recupera il profilo utente
-        const { data: userProfile, error: profileError } = await supabase
-            .from('user_profile')
-            .select('*')
-            .single();
-
-        if (profileError && profileError.code !== 'PGRST116') {
-            console.warn('Errore recupero profilo utente:', profileError);
-        }
-
-        // 2. Recupera le informazioni importanti
+        // 1. Recupera informazioni importanti
         const { data: importantInfo, error: infoError } = await supabase
             .from('important_info')
             .select('*')
             .order('created_at', { ascending: false });
 
         if (infoError) {
-            console.warn('Errore recupero important_info:', infoError);
+            console.error('Errore recupero important_info:', infoError);
         }
 
-        // 3. Recupera le conversazioni recenti (ultime 48 ore)
-        const fortyEightHoursAgo = new Date();
-        fortyEightHoursAgo.setHours(fortyEightHoursAgo.getHours() - 48);
-        
-        const { data: recentHistory, error: historyError } = await supabase
-            .from('memoria_chat')
-            .select('speaker, content, created_at')
-            .gte('created_at', fortyEightHoursAgo.toISOString())
-            .order('created_at', { ascending: false })
-            .limit(50);
+        // 2. Recupera riassunti recenti delle conversazioni (ultimi 7 giorni)
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-        if (historyError) {
-            console.error('Errore recupero cronologia chat:', historyError);
-            return res.status(500).json({ error: 'Errore nel recupero della cronologia.' });
+        const { data: recentSummaries, error: summariesError } = await supabase
+            .from('conversation_summaries')
+            .select('*')
+            .gte('conversation_date', sevenDaysAgo.toISOString())
+            .order('conversation_date', { ascending: false })
+            .limit(10);
+
+        if (summariesError) {
+            console.error('Errore recupero riassunti:', summariesError);
         }
 
-        // 4. Prepara il contesto strutturato
-        let contextSections = [];
-
-        // Sezione profilo utente (simile a ChatGPT)
-        if (userProfile) {
-            let profileSection = "PREFERENZE DI RISPOSTA:\n";
-            if (userProfile.response_preferences) {
-                userProfile.response_preferences.forEach(pref => {
-                    profileSection += `• ${pref.preference} (confidenza: ${pref.confidence})\n`;
-                });
-            }
-            
-            if (userProfile.communication_style) {
-                profileSection += `\nSTILE DI COMUNICAZIONE:\n`;
-                profileSection += `• Livello di formalità: ${userProfile.communication_style.formality}\n`;
-                profileSection += `• Umorismo: ${userProfile.communication_style.humor}\n`;
-                profileSection += `• Livello tecnico: ${userProfile.communication_style.technical_level}\n`;
-            }
-
-            if (userProfile.interests && userProfile.interests.length > 0) {
-                profileSection += `\nINTERESSI: ${userProfile.interests.join(', ')}\n`;
-            }
-
-            contextSections.push(profileSection);
-        }
-
-        // Sezione informazioni importanti
+        // 3. Organizza le informazioni importanti per categoria
+        const infoByType = {};
         if (importantInfo && importantInfo.length > 0) {
-            let infoSection = "FATTI IMPORTANTI DA RICORDARE:\n";
-            
-            const grouped = {};
-            importantInfo.forEach(item => {
-                if (!grouped[item.type]) grouped[item.type] = [];
-                grouped[item.type].push(item);
-            });
-
-            for (const [type, items] of Object.entries(grouped)) {
-                infoSection += `\n${type.toUpperCase()}:\n`;
-                items.forEach(item => {
-                    infoSection += `• ${item.info}`;
-                    if (item.context) infoSection += ` (${item.context})`;
-                    if (item.confidence !== 'alta') infoSection += ` [confidenza: ${item.confidence}]`;
-                    infoSection += '\n';
+            importantInfo.forEach(info => {
+                const type = info.type || 'altro';
+                if (!infoByType[type]) infoByType[type] = [];
+                infoByType[type].push({
+                    info: info.info,
+                    context: info.context,
+                    confidence: info.confidence
                 });
-            }
+            });
+        }
+
+        // 4. Crea il riassunto del contesto
+        let contextSummary = "";
+
+        // Aggiungi informazioni importanti
+        if (Object.keys(infoByType).length > 0) {
+            contextSummary += "INFORMAZIONI IMPORTANTI SU ALEJANDRO:\n\n";
             
-            contextSections.push(infoSection);
-        }
+            const typeLabels = {
+                'famiglia': '👨‍👩‍👧‍👦 Famiglia',
+                'persona': '👤 Persone importanti',
+                'data': '📅 Date importanti',
+                'luogo': '📍 Luoghi',
+                'preferenza': '❤️ Preferenze',
+                'progetto': '💼 Progetti',
+                'altro': '📌 Altro'
+            };
 
-        // Sezione conversazioni recenti
-        let recentSection = "";
-        if (recentHistory && recentHistory.length > 0) {
-            recentSection = "ARGOMENTI RECENTI:\n";
-            const topics = new Set();
-            recentHistory.forEach(msg => {
-                // Estrai argomenti principali dalle conversazioni
-                if (msg.content.length > 20) {
-                    const words = msg.content.toLowerCase().split(/\s+/);
-                    words.forEach(word => {
-                        if (word.length > 5 && !['quando', 'perché', 'come', 'dove', 'cosa'].includes(word)) {
-                            topics.add(word);
-                        }
-                    });
-                }
-            });
-            if (topics.size > 0) {
-                recentSection += Array.from(topics).slice(0, 10).join(', ') + '\n';
+            for (const [type, infos] of Object.entries(infoByType)) {
+                contextSummary += `${typeLabels[type] || type.toUpperCase()}:\n`;
+                infos.forEach(info => {
+                    contextSummary += `- ${info.info}`;
+                    if (info.context) {
+                        contextSummary += ` (${info.context})`;
+                    }
+                    contextSummary += '\n';
+                });
+                contextSummary += '\n';
             }
         }
 
-        if (recentSection) contextSections.push(recentSection);
-
-        // Se non c'è alcun contesto
-        if (contextSections.length === 0) {
-            return res.status(200).json({ 
-                summary: "Non ci sono conversazioni precedenti o informazioni salvate. Questa è la nostra prima conversazione!",
-                profile_exists: false,
-                important_facts_count: 0,
-                recent_messages_count: 0
+        // Aggiungi riassunti recenti
+        if (recentSummaries && recentSummaries.length > 0) {
+            contextSummary += "\nCONVERSAZIONI RECENTI:\n\n";
+            
+            recentSummaries.forEach(summary => {
+                const date = new Date(summary.conversation_date);
+                const dateStr = date.toLocaleDateString('it-IT', { 
+                    day: 'numeric', 
+                    month: 'long',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+                
+                contextSummary += `📅 ${dateStr}:\n`;
+                contextSummary += `${summary.summary}\n`;
+                
+                if (summary.key_points && summary.key_points.length > 0) {
+                    contextSummary += `Punti chiave: ${summary.key_points.join(', ')}\n`;
+                }
+                
+                if (summary.sentiment) {
+                    const sentimentEmoji = {
+                        'positivo': '😊',
+                        'negativo': '😔',
+                        'neutro': '😐',
+                        'misto': '🤔'
+                    };
+                    contextSummary += `Mood: ${sentimentEmoji[summary.sentiment] || ''} ${summary.sentiment}\n`;
+                }
+                
+                contextSummary += '\n';
             });
         }
 
-        // 5. Genera il riassunto finale con GPT
-        const contextText = contextSections.join('\n---\n\n');
-        
-        const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-            method: "POST",
-            headers: { 
-                "Authorization": `Bearer ${OPENAI_API_KEY}`, 
-                "Content-Type": "application/json" 
-            },
-            body: JSON.stringify({
-                model: "gpt-4o-mini",
-                messages: [
-                    {
-                        role: "system",
-                        content: `Sei ${AI_NAME}. Genera un riassunto conciso per iniziare la conversazione con ${USER_NAME}.
-
-IMPORTANTE:
-- Scrivi in PRIMA PERSONA come se fossi tu che ricordi
-- Menziona solo i fatti più rilevanti
-- Sii naturale e amichevole
-- Se ci sono preferenze di comunicazione, tienine conto nel tono
-- Massimo 150 parole`
-                    },
-                    {
-                        role: "user",
-                        content: contextText
-                    }
-                ],
-                temperature: 0.4,
-                max_tokens: 250
-            })
-        });
-
-        if (!openaiResponse.ok) {
-            const errorData = await openaiResponse.json();
-            console.error('Errore API OpenAI:', errorData);
-            return res.status(500).json({ error: 'Errore generazione riassunto' });
+        // Se non ci sono informazioni
+        if (!contextSummary) {
+            contextSummary = "Non ho ancora informazioni memorizzate su Alejandro. Questa sarà la nostra prima conversazione!";
         }
 
-        const summaryData = await openaiResponse.json();
-        const summary = summaryData.choices[0].message.content;
-
-        console.log('generateContextSummary: Riassunto generato con profilo utente');
-
-        return res.status(200).json({ 
-            summary,
-            profile_exists: !!userProfile,
-            important_facts_count: importantInfo?.length || 0,
-            recent_messages_count: recentHistory?.length || 0
+        res.status(200).json({ 
+            summary: contextSummary,
+            totalImportantInfo: importantInfo?.length || 0,
+            recentConversations: recentSummaries?.length || 0
         });
 
     } catch (error) {
-        console.error('Errore in generateContextSummary:', error);
-        return res.status(500).json({ 
+        console.error('Errore generazione riassunto contesto:', error);
+        res.status(500).json({ 
             error: 'Errore interno del server',
             details: error.message 
         });
