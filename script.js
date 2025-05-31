@@ -456,14 +456,19 @@ async function startConversation() {
             
             // Send initial greeting after a small delay
             setTimeout(() => {
+                // Se c'è contesto, chiedi ad Aiko di usarlo specificamente
+                const hasContext = sessionData.instructions && sessionData.instructions.includes('RICORDI PERSONALI:');
+                
                 const greeting = {
                     type: "response.create",
                     response: {
-                        modalities: ["text", "audio"],
-                        instructions: "Saluta con entusiasmo usando uno dei tuoi saluti creativi! Sii super energica e umana. Se ricordi qualcosa dalle conversazioni precedenti, fai un riferimento naturale e spontaneo."
+                        modalities: ["text", "audio"]
                     }
                 };
-                console.log("Invio greeting:", greeting);
+                
+                // Non aggiungiamo ulteriori istruzioni perché sono già nella sessione
+                // Questo evita duplicazioni e conflitti
+                console.log("Invio greeting iniziale");
                 dc.send(JSON.stringify(greeting));
             }, 500);
             
@@ -806,9 +811,11 @@ function startSilenceMonitor() {
         
         const timeSinceLastActivity = Date.now() - lastActivityTime;
         
-        // Se sono passati più di 10 secondi di silenzio E non c'è una risposta attiva
-        if (timeSinceLastActivity > 10000 && !isResponseActive) {
-            console.log("Silenzio rilevato, Aiko interviene!");
+        // Se sono passati più di 10-20 secondi di silenzio (random) E non c'è una risposta attiva
+        const silenceThreshold = 10000 + Math.random() * 10000; // tra 10 e 20 secondi
+        
+        if (timeSinceLastActivity > silenceThreshold && !isResponseActive) {
+            console.log("Silenzio rilevato dopo", Math.floor(silenceThreshold/1000), "secondi, Aiko interviene!");
             
             // Array di frasi per rompere il silenzio
             const silenceBreakers = [
@@ -821,17 +828,33 @@ function startSilenceMonitor() {
                 "Cazzo ma parli o no? Sto aspettando!",
                 "Boh vabbè, se non vuoi parlare canto io... LA LA LA LAAA!",
                 "Minchia che noia... almeno dimmi che tempo fa da te!",
-                "Aòò! Sono qui che aspetto come una scema!"
+                "Aòò! Sono qui che aspetto come una scema!",
+                "Ma sei morto? Dai rispondiiii!",
+                "Ok ho capito, fai il muto... che palle però!",
+                "Senti ma... tutto bene? Sei ancora vivo?",
+                "*sussurrando* psst... ehi... ci seiii?",
+                "SVEGLIAAAA! Ah no scusa, ho urlato ahaha",
+                "Va bene, ignora pure... tanto sto qua da sola...",
+                "Che due coglioni sto silenzio! Parla!",
+                "Mi sa che ti ho perso... vabbè pace",
+                "Uffa ma che noia mortale! Racconta qualcosa dai!",
+                "Se non parli ti canto Baby Shark... uno due tre..."
             ];
             
-            const randomPhrase = silenceBreakers[Math.floor(Math.random() * silenceBreakers.length)];
+            // Scegli una frase casuale diversa dall'ultima usata
+            let randomPhrase;
+            do {
+                randomPhrase = silenceBreakers[Math.floor(Math.random() * silenceBreakers.length)];
+            } while (randomPhrase === window.lastSilencePhrase);
             
-            // Invia il comando per far parlare Aiko
+            window.lastSilencePhrase = randomPhrase;
+            
+            // Invia il comando per far parlare Aiko senza istruzioni aggiuntive
             const breakSilence = {
                 type: "response.create",
                 response: {
                     modalities: ["text", "audio"],
-                    instructions: `Rompi il silenzio dicendo questa frase con la tua personalità vivace: "${randomPhrase}". Puoi anche aggiungere qualcosa di tuo, ma sii breve!`
+                    instructions: randomPhrase // Usa direttamente la frase come prompt
                 }
             };
             
