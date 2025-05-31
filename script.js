@@ -180,12 +180,18 @@ initMatrixAnimation();
 // Get context summary at conversation start
 async function getInitialContext() {
     try {
+        console.log("DEBUG: Chiamata a", SUMMARY_API_ENDPOINT);
         const response = await fetch(SUMMARY_API_ENDPOINT);
-        if (!response.ok) return "";
+        console.log("DEBUG: Response status:", response.status);
+        if (!response.ok) {
+            console.error("DEBUG: Errore response:", response.status, response.statusText);
+            return "";
+        }
         const data = await response.json();
+        console.log("DEBUG: Data ricevuta:", data);
         return data.summary || "";
     } catch (error) {
-        console.error("Errore recupero contesto:", error);
+        console.error("DEBUG: Errore recupero contesto:", error);
         return "";
     }
 }
@@ -193,26 +199,32 @@ async function getInitialContext() {
 // Get session token
 async function getSessionToken(contextSummary) {
     try {
+        console.log("DEBUG: Chiamata POST a", SESSION_API_ENDPOINT);
         const response = await fetch(SESSION_API_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contextSummary })
         });
         
+        console.log("DEBUG: Response status:", response.status);
         if (!response.ok) {
-            throw new Error(`Errore ${response.status}`);
+            const errorText = await response.text();
+            console.error("DEBUG: Errore response:", response.status, errorText);
+            throw new Error(`Errore ${response.status}: ${errorText}`);
         }
         
         const data = await response.json();
+        console.log("DEBUG: Token response:", data);
         return data.client_secret;
     } catch (error) {
-        console.error("Errore token:", error);
+        console.error("DEBUG: Errore token completo:", error);
         throw error;
     }
 }
 
 // Start conversation
 async function startConversation() {
+    console.log("DEBUG: startConversation iniziata");
     talkButton.disabled = true;
     endButton.disabled = false;
     isActive = true;
@@ -223,11 +235,18 @@ async function startConversation() {
     
     try {
         // Get context and token
+        console.log("DEBUG: Recupero context summary...");
         const context = await getInitialContext();
+        console.log("DEBUG: Context ricevuto:", context ? context.substring(0, 100) + "..." : "vuoto");
+        
+        console.log("DEBUG: Richiesta session token...");
         ephemeralKeyGlobal = await getSessionToken(context);
+        console.log("DEBUG: Token ricevuto:", ephemeralKeyGlobal ? "OK" : "ERRORE");
         
         // Get user media
+        console.log("DEBUG: Richiesta accesso microfono...");
         webrtcStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log("DEBUG: Microfono OK");
         
         // Setup WebRTC
         pc = new RTCPeerConnection();

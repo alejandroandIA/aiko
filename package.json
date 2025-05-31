@@ -1,0 +1,10 @@
+{
+  "name": "aiko-voice-ai",
+  "version": "1.0.0",
+  "description": "Aiko - AI Conversazionale Vocale",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'Use Vercel dev for local development'"
+  }
+} 
