@@ -56,7 +56,9 @@ NON estrarre:
 - Domande senza risposta
 - Speculazioni o ipotesi
 
-Formato output JSON:
+IMPORTANTE: Restituisci SOLO un oggetto JSON valido, senza backtick markdown o altro testo.
+
+Formato output JSON (senza backtick):
 {
   "important_facts": [
     {
@@ -90,7 +92,22 @@ Formato output JSON:
 
         if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
             try {
-                extractedInfo = JSON.parse(data.choices[0].message.content);
+                let content = data.choices[0].message.content;
+                
+                // Rimuovi i backtick markdown se presenti
+                content = content.trim();
+                if (content.startsWith('```json')) {
+                    content = content.substring(7); // Rimuovi ```json
+                }
+                if (content.startsWith('```')) {
+                    content = content.substring(3); // Rimuovi ```
+                }
+                if (content.endsWith('```')) {
+                    content = content.substring(0, content.length - 3); // Rimuovi ``` alla fine
+                }
+                content = content.trim();
+                
+                extractedInfo = JSON.parse(content);
             } catch (parseError) {
                 console.error('Errore parsing JSON dalla risposta di OpenAI in extractImportantInfo:', parseError);
                 console.error('Contenuto ricevuto da OpenAI che ha causato errore di parsing:', data.choices[0].message.content);
