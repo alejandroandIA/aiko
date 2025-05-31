@@ -28,6 +28,7 @@ let currentConversation = [];
 let sessionStartTime = null;
 let silenceTimer = null; // Timer per il silenzio
 let lastActivityTime = Date.now(); // Ultimo momento di attività
+let isResponseActive = false; // Traccia se c'è una risposta attiva
 
 // Matrix Animation Setup
 function initMatrixAnimation() {
@@ -546,6 +547,7 @@ function handleServerEvent(event) {
             
         case "response.created":
             console.log("Risposta creata");
+            isResponseActive = true; // Imposta risposta attiva
             break;
             
         case "response.output_item.added":
@@ -629,11 +631,13 @@ function handleServerEvent(event) {
         case "response.done":
             console.log("Risposta completata");
             statusDiv.textContent = "Pronto";
+            isResponseActive = false; // Risposta completata
             break;
             
         case "error":
             console.error("ERRORE:", event);
             statusDiv.textContent = "Errore: " + (event.error?.message || "Sconosciuto");
+            isResponseActive = false; // Reset in caso di errore
             break;
             
         default:
@@ -802,8 +806,8 @@ function startSilenceMonitor() {
         
         const timeSinceLastActivity = Date.now() - lastActivityTime;
         
-        // Se sono passati più di 10 secondi di silenzio
-        if (timeSinceLastActivity > 10000) {
+        // Se sono passati più di 10 secondi di silenzio E non c'è una risposta attiva
+        if (timeSinceLastActivity > 10000 && !isResponseActive) {
             console.log("Silenzio rilevato, Aiko interviene!");
             
             // Array di frasi per rompere il silenzio
