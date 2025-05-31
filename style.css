@@ -33,6 +33,7 @@ body {
     height: 100%;
     z-index: 1;
     opacity: 0.1;
+    pointer-events: none;
 }
 
 /* Container principale */
@@ -50,6 +51,8 @@ body {
     width: 100%;
     max-width: 500px;
     padding: 20px;
+    position: relative;
+    z-index: 10;
 }
 
 /* Aiko Face Container */
