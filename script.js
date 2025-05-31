@@ -239,8 +239,33 @@ async function startConversation() {
         
         // Set up audio
         pc.ontrack = (event) => {
-            console.log("Audio track ricevuto da OpenAI");
-            aiAudioPlayer.srcObject = event.streams[0];
+            console.log("Audio track ricevuto da OpenAI", event);
+            if (event.streams && event.streams[0]) {
+                console.log("Stream audio trovato, collegamento all'elemento audio");
+                aiAudioPlayer.srcObject = event.streams[0];
+                
+                // Assicuriamoci che l'audio sia abilitato
+                aiAudioPlayer.autoplay = true;
+                aiAudioPlayer.volume = 1.0;
+                
+                // Prova a fare play esplicitamente
+                aiAudioPlayer.play().then(() => {
+                    console.log("Audio playback avviato con successo");
+                }).catch(err => {
+                    console.error("Errore autoplay audio:", err);
+                    statusDiv.textContent = "⚠️ Clicca sulla pagina per abilitare l'audio";
+                    
+                    // Aggiungi listener per abilitare audio al primo click
+                    document.addEventListener('click', () => {
+                        aiAudioPlayer.play().then(() => {
+                            console.log("Audio abilitato dopo click");
+                            statusDiv.textContent = "Audio abilitato!";
+                        }).catch(e => console.error("Ancora errore audio:", e));
+                    }, { once: true });
+                });
+            } else {
+                console.error("Nessuno stream audio trovato nell'evento track");
+            }
         };
         
         // Add local audio track
@@ -260,6 +285,9 @@ async function startConversation() {
                 session: {
                     instructions: sessionData.instructions || "Sei Aiko, un'assistente AI estremamente naturale e umana che parla solo italiano.",
                     voice: "shimmer",
+                    modalities: ["text", "audio"],
+                    input_audio_format: "pcm16",
+                    output_audio_format: "pcm16",
                     input_audio_transcription: { model: "whisper-1" },
                     turn_detection: {
                         type: "server_vad",
@@ -285,17 +313,21 @@ async function startConversation() {
                     }]
                 }
             };
+            console.log("Invio configurazione sessione:", sessionUpdate);
             dc.send(JSON.stringify(sessionUpdate));
             
-            // Send initial greeting
-            const greeting = {
-                type: "response.create",
-                response: {
-                    modalities: ["text", "audio"],
-                    instructions: "Saluta calorosamente l'utente. Se hai informazioni precedenti su di lui, fai un riferimento naturale a qualcosa che ricordi."
-                }
-            };
-            dc.send(JSON.stringify(greeting));
+            // Send initial greeting after a small delay
+            setTimeout(() => {
+                const greeting = {
+                    type: "response.create",
+                    response: {
+                        modalities: ["text", "audio"],
+                        instructions: "Saluta calorosamente l'utente in italiano. Se hai informazioni precedenti su di lui, fai un riferimento naturale a qualcosa che ricordi. Parla in modo naturale e amichevole."
+                    }
+                };
+                console.log("Invio greeting:", greeting);
+                dc.send(JSON.stringify(greeting));
+            }, 500);
         };
         
         dc.onmessage = (event) => {
@@ -361,20 +393,45 @@ async function startConversation() {
 
 // Handle server events
 function handleServerEvent(event) {
+    console.log("Evento ricevuto:", event.type, event);
+    
     switch (event.type) {
+        case "session.created":
+            console.log("Sessione creata:", event.session);
+            break;
+            
+        case "session.updated":
+            console.log("Sessione aggiornata:", event.session);
+            break;
+            
+        case "response.created":
+            console.log("Risposta creata");
+            break;
+            
+        case "response.output_item.added":
+            console.log("Output item aggiunto:", event);
+            break;
+            
+        case "response.content_part.added":
+            console.log("Content part aggiunto:", event);
+            break;
+            
         case "response.audio.delta":
             // Audio being streamed
+            console.log("Audio delta ricevuto");
             faceAnimation.startSpeaking();
             break;
             
         case "response.audio.done":
             // Audio finished
+            console.log("Audio completato");
             faceAnimation.stopSpeaking();
             break;
             
         case "response.audio_transcript.delta":
             // AI is speaking - add to conversation
             if (event.delta) {
+                console.log("Aiko sta dicendo:", event.delta);
                 appendToConversation("Aiko", event.delta, event.item_id);
             }
             break;
@@ -382,11 +439,12 @@ function handleServerEvent(event) {
         case "response.audio_transcript.done":
             // AI finished speaking
             if (event.transcript) {
-                console.log("Aiko:", event.transcript);
+                console.log("Aiko ha detto (completo):", event.transcript);
             }
             break;
             
         case "conversation.item.created":
+            console.log("Item conversazione creato:", event.item);
             if (event.item?.role === "user" && event.item?.formatted?.transcript) {
                 addToConversation("Tu", event.item.formatted.transcript);
                 console.log("Tu:", event.item.formatted.transcript);
@@ -396,6 +454,7 @@ function handleServerEvent(event) {
         case "conversation.item.input_audio_transcription.completed":
             // User transcription complete
             if (event.transcript) {
+                console.log("Trascrizione utente completa:", event.transcript);
                 const lastUserEntry = currentConversation.filter(c => c.speaker === "Tu").pop();
                 if (lastUserEntry) {
                     lastUserEntry.content = event.transcript;
@@ -404,11 +463,17 @@ function handleServerEvent(event) {
             break;
             
         case "input_audio_buffer.speech_started":
+            console.log("Utente sta parlando");
             statusDiv.textContent = "Ascoltando...";
             break;
             
         case "input_audio_buffer.speech_stopped":
+            console.log("Utente ha smesso di parlare");
             statusDiv.textContent = "Elaborando...";
+            break;
+            
+        case "input_audio_buffer.committed":
+            console.log("Audio buffer committed");
             break;
             
         case "response.function_call_arguments.done":
@@ -418,13 +483,17 @@ function handleServerEvent(event) {
             break;
             
         case "response.done":
+            console.log("Risposta completata");
             statusDiv.textContent = "Pronto";
             break;
             
         case "error":
-            console.error("Errore:", event);
-            statusDiv.textContent = "Errore: " + event.error?.message;
+            console.error("ERRORE:", event);
+            statusDiv.textContent = "Errore: " + (event.error?.message || "Sconosciuto");
             break;
+            
+        default:
+            console.log("Evento non gestito:", event.type);
     }
 }
 
