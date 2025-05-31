@@ -4,10 +4,6 @@ import { createClient } from '@supabase/supabase-js';
 const USER_NAME = 'Tu';
 const AI_NAME = 'Aiko';
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
 export default async function handler(req, res) {
     if (req.method === 'OPTIONS') {
         res.setHeader('Access-Control-Allow-Origin', '*');
@@ -26,6 +22,15 @@ export default async function handler(req, res) {
     if (!query || query.trim() === '') {
         return res.status(400).json({ error: 'Query di ricerca mancante' });
     }
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+        return res.status(500).json({ error: 'Configurazione Supabase mancante' });
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     try {
         console.log(`Ricerca memoria per: "${query}"`);

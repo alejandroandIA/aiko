@@ -1,14 +1,19 @@
 // api/generateContextSummary.js
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
 export default async function handler(req, res) {
     if (req.method !== 'GET') {
         return res.status(405).json({ error: 'Metodo non consentito. Usa GET.' });
     }
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+        return res.status(500).json({ error: 'Configurazione Supabase mancante' });
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     try {
         // 1. Recupera informazioni importanti
@@ -55,7 +60,7 @@ export default async function handler(req, res) {
 
         // Aggiungi informazioni importanti
         if (Object.keys(infoByType).length > 0) {
-            contextSummary += "INFORMAZIONI IMPORTANTI SU ALEJANDRO:\n\n";
+            contextSummary += "INFORMAZIONI IMPORTANTI:\n\n";
             
             const typeLabels = {
                 'famiglia': '👨‍👩‍👧‍👦 Famiglia',
@@ -116,7 +121,7 @@ export default async function handler(req, res) {
 
         // Se non ci sono informazioni
         if (!contextSummary) {
-            contextSummary = "Non ho ancora informazioni memorizzate su Alejandro. Questa sarà la nostra prima conversazione!";
+            contextSummary = "Non ho ancora informazioni memorizzate. Questa sarà la nostra prima conversazione!";
         }
 
         res.status(200).json({ 

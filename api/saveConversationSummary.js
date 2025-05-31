@@ -1,9 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
 // Funzione per generare riassunto con OpenAI
 async function generateSummary(conversation) {
     const openaiApiKey = process.env.OPENAI_API_KEY;
@@ -81,6 +77,15 @@ export default async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Metodo non consentito' });
     }
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+        return res.status(500).json({ error: 'Configurazione Supabase mancante' });
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     try {
         const { conversation, extracted_info, session_start, session_end } = req.body;

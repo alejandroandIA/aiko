@@ -51,7 +51,7 @@ export default async function handler(req, res) {
         });
 
         // Crea un riassunto testuale
-        let summary = "Informazioni importanti su Alejandro:\n";
+        let summary = "Informazioni importanti:\n";
         
         if (groupedInfo.famiglia.length > 0) {
             summary += "\nFAMIGLIA:\n";
