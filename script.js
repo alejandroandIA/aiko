@@ -21,26 +21,48 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
     
-    // Click handler semplice
-    talkButton.onclick = function() {
-        console.log("===== CLICK SU PARLA =====");
-        alert("Click registrato! Ora testo le API...");
-        
-        // Disabilita pulsanti
-        talkButton.disabled = true;
-        endButton.disabled = false;
-        statusDiv.textContent = "Test API in corso...";
-        
-        // Test API
-        testAPIs();
+    // Debug del pulsante
+    console.log("Pulsante PARLA:", talkButton);
+    console.log("Classes del pulsante:", talkButton.className);
+    console.log("Disabled?", talkButton.disabled);
+    console.log("Style:", talkButton.style.cssText);
+    
+    // Prova con addEventListener invece di onclick
+    talkButton.addEventListener('click', function(e) {
+        console.log("===== CLICK EVENT LISTENER =====");
+        console.log("Event:", e);
+        alert("CLICK DA addEventListener!");
+    });
+    
+    // Prova anche con onclick
+    talkButton.onclick = function(e) {
+        console.log("===== CLICK ONCLICK =====");
+        console.log("Event:", e);
+        alert("CLICK DA onclick!");
     };
     
-    endButton.onclick = function() {
-        console.log("===== CLICK SU CHIUDI =====");
-        talkButton.disabled = false;
-        endButton.disabled = true;
-        statusDiv.textContent = "";
+    // Test click immediato su tutto il documento
+    document.addEventListener('click', function(e) {
+        console.log("===== CLICK NEL DOCUMENTO =====");
+        console.log("Target:", e.target);
+        console.log("Target ID:", e.target.id);
+        console.log("Target class:", e.target.className);
+        
+        // Se è il pulsante o un suo figlio
+        if (e.target.id === 'talkButton' || e.target.closest('#talkButton')) {
+            console.log("!!! CLICK SUL PULSANTE RILEVATO DAL DOCUMENT !!!");
+            alert("CLICK RILEVATO DAL DOCUMENT!");
+        }
+    });
+    
+    // Aggiungi un pulsante di test semplice
+    const testBtn = document.createElement('button');
+    testBtn.textContent = "TEST BUTTON";
+    testBtn.style.cssText = "position: fixed; top: 10px; left: 10px; z-index: 9999; background: red; color: white; padding: 10px;";
+    testBtn.onclick = function() {
+        alert("TEST BUTTON FUNZIONA!");
     };
+    document.body.appendChild(testBtn);
     
     console.log("===== EVENT LISTENERS AGGIUNTI =====");
 });
