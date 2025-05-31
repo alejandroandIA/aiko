@@ -61,50 +61,48 @@ body {
     position: relative;
 }
 
-.aiko-face-matrix {
+/* Aiko Face Styles */
+#aikoFace {
+    position: relative;
     width: 300px;
     height: 300px;
-    margin: 0 auto;
-    position: relative;
-    border: 2px solid var(--matrix-green);
-    border-radius: 50%;
-    overflow: hidden;
-    box-shadow: 
-        0 0 50px var(--matrix-green),
-        inset 0 0 50px rgba(0, 255, 65, 0.2);
-    background: radial-gradient(circle, rgba(0, 255, 65, 0.1) 0%, transparent 70%);
+    margin: 50px auto;
+    filter: drop-shadow(0 0 30px #00ff41);
+    transition: all 0.3s ease;
+}
+
+#aikoFace.processing {
+    animation: processingPulse 0.5s ease-in-out infinite, faceBounce 2s ease-in-out infinite;
+    filter: drop-shadow(0 0 50px #00ff41) brightness(1.2);
 }
 
 #faceCanvas {
     width: 100%;
     height: 100%;
-    position: absolute;
-    top: 0;
-    left: 0;
+    position: relative;
+    z-index: 10;
 }
 
-/* Voice Indicator - pulsa quando Aiko parla */
-.voice-indicator {
+/* Indicatore vocale più vivace */
+#voiceIndicator {
     position: absolute;
-    bottom: 20px;
+    bottom: -40px;
     left: 50%;
     transform: translateX(-50%);
     width: 60px;
-    height: 4px;
-    background: var(--matrix-green);
-    border-radius: 2px;
+    height: 20px;
+    background: radial-gradient(ellipse, #00ff41, transparent);
+    border-radius: 50%;
     opacity: 0;
-    transition: opacity 0.3s ease;
+    transition: all 0.3s ease;
+    filter: blur(2px);
 }
 
-.voice-indicator.active {
+#voiceIndicator.active {
     opacity: 1;
-    animation: voicePulse 0.5s ease-in-out infinite;
-}
-
-@keyframes voicePulse {
-    0%, 100% { transform: translateX(-50%) scaleX(1); }
-    50% { transform: translateX(-50%) scaleX(1.5); }
+    animation: voicePulse 0.3s ease-in-out infinite, voiceWave 1s ease-in-out infinite;
+    filter: blur(0);
+    box-shadow: 0 0 30px #00ff41, 0 0 60px #00ff41;
 }
 
 /* Nome Aiko */
@@ -235,5 +233,51 @@ body {
     50% { 
         border-color: var(--matrix-dark-green);
         box-shadow: 0 0 30px var(--matrix-dark-green);
+    }
+}
+
+@keyframes voicePulse {
+    0%, 100% { 
+        transform: translateX(-50%) scaleX(1) scaleY(1); 
+        opacity: 0.8;
+    }
+    50% { 
+        transform: translateX(-50%) scaleX(1.5) scaleY(0.7); 
+        opacity: 1;
+    }
+}
+
+@keyframes voiceWave {
+    0%, 100% { 
+        width: 60px;
+        background: radial-gradient(ellipse, #00ff41, transparent);
+    }
+    25% { 
+        width: 80px;
+        background: radial-gradient(ellipse, #00ff41 70%, transparent);
+    }
+    50% { 
+        width: 100px;
+        background: radial-gradient(ellipse, #00ff41 50%, transparent);
+    }
+    75% { 
+        width: 80px;
+        background: radial-gradient(ellipse, #00ff41 70%, transparent);
+    }
+}
+
+@keyframes faceBounce {
+    0%, 100% { transform: translateY(0) scale(1); }
+    25% { transform: translateY(-5px) scale(1.02); }
+    50% { transform: translateY(0) scale(1); }
+    75% { transform: translateY(-3px) scale(1.01); }
+}
+
+@keyframes processingPulse {
+    0%, 100% { 
+        filter: drop-shadow(0 0 30px #00ff41) brightness(1);
+    }
+    50% { 
+        filter: drop-shadow(0 0 60px #00ff41) brightness(1.3) contrast(1.1);
     }
 }

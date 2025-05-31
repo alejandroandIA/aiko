@@ -26,6 +26,8 @@ let ephemeralKey = null;
 let isActive = false;
 let currentConversation = [];
 let sessionStartTime = null;
+let silenceTimer = null; // Timer per il silenzio
+let lastActivityTime = Date.now(); // Ultimo momento di attività
 
 // Matrix Animation Setup
 function initMatrixAnimation() {
@@ -68,6 +70,14 @@ class FaceAnimation {
         this.ctx = canvas.getContext('2d');
         this.isAnimating = false;
         this.particles = [];
+        // Nuove proprietà per animazioni più vivaci
+        this.blinkTimer = 0;
+        this.isBlinking = false;
+        this.eyeMovement = { x: 0, y: 0 };
+        this.mouthAnimation = 0;
+        this.breathAnimation = 0;
+        this.emotionIntensity = 0;
+        this.lastSpeakTime = Date.now();
         this.init();
     }
     
@@ -83,40 +93,167 @@ class FaceAnimation {
         
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         
+        // Respirazione sottile
+        this.breathAnimation += 0.02;
+        const breathScale = 1 + Math.sin(this.breathAnimation) * 0.02;
+        
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.scale(breathScale, breathScale);
+        ctx.translate(-centerX, -centerY);
+        
         ctx.strokeStyle = '#00ff41';
         ctx.lineWidth = 2;
-        ctx.shadowBlur = 20;
+        ctx.shadowBlur = 20 + Math.sin(Date.now() * 0.005) * 10;
         ctx.shadowColor = '#00ff41';
         
-        // Face circle
+        // Face circle con effetto pulsante
         ctx.beginPath();
         ctx.arc(centerX, centerY, 100, 0, Math.PI * 2);
         ctx.stroke();
         
-        // Eyes
+        // Movimento casuale degli occhi ogni tanto
+        if (Math.random() > 0.98) {
+            this.eyeMovement.x = (Math.random() - 0.5) * 5;
+            this.eyeMovement.y = (Math.random() - 0.5) * 3;
+        }
+        
+        // Attenuazione graduale del movimento
+        this.eyeMovement.x *= 0.95;
+        this.eyeMovement.y *= 0.95;
+        
+        // Eyes con battito di ciglia
         const eyeY = centerY - 20;
         const eyeSpacing = 35;
         
-        ctx.beginPath();
-        ctx.arc(centerX - eyeSpacing, eyeY, 15, 0, Math.PI * 2);
-        ctx.stroke();
+        // Controllo battito di ciglia
+        this.blinkTimer++;
+        if (this.blinkTimer > 150 + Math.random() * 100) {
+            this.isBlinking = true;
+            this.blinkTimer = 0;
+        }
         
-        ctx.beginPath();
-        ctx.arc(centerX + eyeSpacing, eyeY, 15, 0, Math.PI * 2);
-        ctx.stroke();
+        const blinkProgress = this.isBlinking ? Math.min(this.blinkTimer / 10, 1) : 0;
+        const eyeHeight = this.isBlinking ? 15 * (1 - blinkProgress * 2) : 15;
         
-        // Mouth
-        if (this.isAnimating) {
-            const waveOffset = Math.sin(Date.now() * 0.01) * 5;
+        if (this.isBlinking && this.blinkTimer > 10) {
+            this.isBlinking = false;
+        }
+        
+        // Occhio sinistro
+        ctx.beginPath();
+        if (eyeHeight > 0) {
+            ctx.arc(centerX - eyeSpacing + this.eyeMovement.x, 
+                   eyeY + this.eyeMovement.y, 
+                   15, 0, Math.PI * 2);
+            // Pupilla
+            ctx.fillStyle = '#00ff41';
             ctx.beginPath();
-            ctx.moveTo(centerX - 30, centerY + 40);
-            ctx.quadraticCurveTo(centerX, centerY + 40 + waveOffset, centerX + 30, centerY + 40);
-            ctx.stroke();
+            ctx.arc(centerX - eyeSpacing + this.eyeMovement.x * 2, 
+                   eyeY + this.eyeMovement.y * 2, 
+                   5, 0, Math.PI * 2);
+            ctx.fill();
         } else {
+            // Occhio chiuso
+            ctx.moveTo(centerX - eyeSpacing - 15, eyeY);
+            ctx.lineTo(centerX - eyeSpacing + 15, eyeY);
+        }
+        ctx.stroke();
+        
+        // Occhio destro
+        ctx.beginPath();
+        if (eyeHeight > 0) {
+            ctx.arc(centerX + eyeSpacing + this.eyeMovement.x, 
+                   eyeY + this.eyeMovement.y, 
+                   15, 0, Math.PI * 2);
+            // Pupilla
+            ctx.fillStyle = '#00ff41';
+            ctx.beginPath();
+            ctx.arc(centerX + eyeSpacing + this.eyeMovement.x * 2, 
+                   eyeY + this.eyeMovement.y * 2, 
+                   5, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            // Occhio chiuso
+            ctx.moveTo(centerX + eyeSpacing - 15, eyeY);
+            ctx.lineTo(centerX + eyeSpacing + 15, eyeY);
+        }
+        ctx.stroke();
+        
+        ctx.strokeStyle = '#00ff41';
+        
+        // Mouth - molto più espressiva
+        if (this.isAnimating) {
+            // Bocca animata mentre parla
+            this.mouthAnimation += 0.3;
+            this.emotionIntensity = Math.min(this.emotionIntensity + 0.1, 1);
+            
+            const mouthOpen = Math.abs(Math.sin(this.mouthAnimation)) * 20 * this.emotionIntensity;
+            const mouthWidth = 30 + Math.sin(this.mouthAnimation * 0.5) * 10;
+            
+            ctx.beginPath();
+            ctx.moveTo(centerX - mouthWidth, centerY + 40);
+            
+            // Bocca aperta con forme diverse
+            if (mouthOpen > 10) {
+                // Bocca aperta
+                ctx.quadraticCurveTo(centerX, centerY + 40 + mouthOpen, 
+                                   centerX + mouthWidth, centerY + 40);
+                ctx.quadraticCurveTo(centerX, centerY + 40 + mouthOpen/2, 
+                                   centerX - mouthWidth, centerY + 40);
+                ctx.fillStyle = 'rgba(0, 255, 65, 0.3)';
+                ctx.fill();
+            } else {
+                // Bocca sorridente
+                ctx.quadraticCurveTo(centerX, centerY + 40 + mouthOpen, 
+                                   centerX + mouthWidth, centerY + 40);
+            }
+            ctx.stroke();
+            
+        } else {
+            // Bocca a riposo con leggero sorriso
+            this.emotionIntensity *= 0.95;
+            const smileOffset = Math.sin(Date.now() * 0.001) * 2;
+            
             ctx.beginPath();
             ctx.moveTo(centerX - 20, centerY + 40);
-            ctx.lineTo(centerX + 20, centerY + 40);
+            ctx.quadraticCurveTo(centerX, centerY + 42 + smileOffset, 
+                               centerX + 20, centerY + 40);
             ctx.stroke();
+        }
+        
+        ctx.restore();
+        
+        // Sopracciglia espressive (quando parla)
+        if (this.isAnimating || this.emotionIntensity > 0.1) {
+            ctx.save();
+            ctx.strokeStyle = '#00ff41';
+            ctx.lineWidth = 3;
+            
+            const eyebrowHeight = -35 - this.emotionIntensity * 10;
+            const eyebrowAngle = Math.sin(this.mouthAnimation * 0.2) * 0.2;
+            
+            // Sopracciglio sinistro
+            ctx.save();
+            ctx.translate(centerX - eyeSpacing, centerY + eyebrowHeight);
+            ctx.rotate(-eyebrowAngle);
+            ctx.beginPath();
+            ctx.moveTo(-15, 0);
+            ctx.lineTo(15, -5);
+            ctx.stroke();
+            ctx.restore();
+            
+            // Sopracciglio destro
+            ctx.save();
+            ctx.translate(centerX + eyeSpacing, centerY + eyebrowHeight);
+            ctx.rotate(eyebrowAngle);
+            ctx.beginPath();
+            ctx.moveTo(-15, -5);
+            ctx.lineTo(15, 0);
+            ctx.stroke();
+            ctx.restore();
+            
+            ctx.restore();
         }
         
         if (this.isAnimating) {
@@ -322,12 +459,15 @@ async function startConversation() {
                     type: "response.create",
                     response: {
                         modalities: ["text", "audio"],
-                        instructions: "Saluta calorosamente l'utente in italiano. Se hai informazioni precedenti su di lui, fai un riferimento naturale a qualcosa che ricordi. Parla in modo naturale e amichevole."
+                        instructions: "Saluta con entusiasmo usando uno dei tuoi saluti creativi! Sii super energica e umana. Se ricordi qualcosa dalle conversazioni precedenti, fai un riferimento naturale e spontaneo."
                     }
                 };
                 console.log("Invio greeting:", greeting);
                 dc.send(JSON.stringify(greeting));
             }, 500);
+            
+            // Avvia il controllo del silenzio
+            startSilenceMonitor();
         };
         
         dc.onmessage = (event) => {
@@ -420,12 +560,14 @@ function handleServerEvent(event) {
             // Audio being streamed
             console.log("Audio delta ricevuto");
             faceAnimation.startSpeaking();
+            lastActivityTime = Date.now(); // Resetta il timer quando Aiko parla
             break;
             
         case "response.audio.done":
             // Audio finished
             console.log("Audio completato");
             faceAnimation.stopSpeaking();
+            lastActivityTime = Date.now(); // Resetta il timer
             break;
             
         case "response.audio_transcript.delta":
@@ -465,11 +607,13 @@ function handleServerEvent(event) {
         case "input_audio_buffer.speech_started":
             console.log("Utente sta parlando");
             statusDiv.textContent = "Ascoltando...";
+            lastActivityTime = Date.now(); // Resetta il timer del silenzio
             break;
             
         case "input_audio_buffer.speech_stopped":
             console.log("Utente ha smesso di parlare");
             statusDiv.textContent = "Elaborando...";
+            lastActivityTime = Date.now(); // Resetta il timer del silenzio
             break;
             
         case "input_audio_buffer.committed":
@@ -562,6 +706,12 @@ async function endConversation() {
     endButton.disabled = true;
     faceAnimation.stopSpeaking();
     
+    // Ferma il timer del silenzio
+    if (silenceTimer) {
+        clearInterval(silenceTimer);
+        silenceTimer = null;
+    }
+    
     // Save conversation summary if there was content
     if (currentConversation.length > 0) {
         statusDiv.textContent = "Salvo la conversazione...";
@@ -635,5 +785,58 @@ window.addEventListener('resize', () => {
         canvas.height = window.innerHeight;
     }
 });
+
+// Funzione per monitorare il silenzio
+function startSilenceMonitor() {
+    // Resetta il timer del silenzio
+    if (silenceTimer) {
+        clearInterval(silenceTimer);
+    }
+    
+    // Controlla ogni secondo se c'è silenzio prolungato
+    silenceTimer = setInterval(() => {
+        if (!isActive || !dc || dc.readyState !== 'open') {
+            clearInterval(silenceTimer);
+            return;
+        }
+        
+        const timeSinceLastActivity = Date.now() - lastActivityTime;
+        
+        // Se sono passati più di 10 secondi di silenzio
+        if (timeSinceLastActivity > 10000) {
+            console.log("Silenzio rilevato, Aiko interviene!");
+            
+            // Array di frasi per rompere il silenzio
+            const silenceBreakers = [
+                "Ehi... ci sei ancora? Mi sto annoiando qui!",
+                "Oddio che silenzio imbarazzante... ahaha!",
+                "Allora? Mi hai abbandonata? Dai su, dimmi qualcosa!",
+                "Ooooh! Sveglia! Sono ancora qui eh!",
+                "Madonna che silenzio... mi sa che ti sei addormentato ahaha",
+                "Ehm... pronto? C'è nessuno? Echo echo echooo!",
+                "Cazzo ma parli o no? Sto aspettando!",
+                "Boh vabbè, se non vuoi parlare canto io... LA LA LA LAAA!",
+                "Minchia che noia... almeno dimmi che tempo fa da te!",
+                "Aòò! Sono qui che aspetto come una scema!"
+            ];
+            
+            const randomPhrase = silenceBreakers[Math.floor(Math.random() * silenceBreakers.length)];
+            
+            // Invia il comando per far parlare Aiko
+            const breakSilence = {
+                type: "response.create",
+                response: {
+                    modalities: ["text", "audio"],
+                    instructions: `Rompi il silenzio dicendo questa frase con la tua personalità vivace: "${randomPhrase}". Puoi anche aggiungere qualcosa di tuo, ma sii breve!`
+                }
+            };
+            
+            dc.send(JSON.stringify(breakSilence));
+            
+            // Resetta il timer
+            lastActivityTime = Date.now();
+        }
+    }, 1000);
+}
 
 console.log("Aiko pronta!"); 
