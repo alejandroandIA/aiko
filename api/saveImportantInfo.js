@@ -12,58 +12,48 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+    const { importantInfo, userId } = req.body;
 
-    if (!supabaseUrl || !supabaseKey) {
-        return res.status(500).json({ error: 'Configurazione Supabase mancante' });
+    if (!importantInfo || !userId || !Array.isArray(importantInfo)) {
+        return res.status(400).json({ error: 'Dati non validi' });
     }
 
+    if (importantInfo.length === 0) {
+        return res.status(200).json({ success: true, message: 'Nessuna informazione da salvare' });
+    }
+
+    const supabase = createClient(
+        process.env.SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_KEY
+    );
+
     try {
-        const { type, info, context, confidence } = req.body;
+        // Prepara i dati per l'inserimento
+        const dataToInsert = importantInfo.map(info => ({
+            user_id: userId,
+            type: info.type || 'altro',
+            info: info.info,
+            context: info.context || null,
+            confidence: info.confidence || 'media'
+        }));
 
-        if (!type || !info) {
-            return res.status(400).json({ error: 'Dati mancanti' });
-        }
-
-        const supabase = createClient(supabaseUrl, supabaseKey);
-
-        // Prima verifica se l'informazione esiste già
-        const { data: existing } = await supabase
+        // Inserisci in batch
+        const { data, error } = await supabase
             .from('important_info')
-            .select('*')
-            .eq('info', info)
-            .single();
-
-        if (existing) {
-            // Aggiorna se già esiste
-            const { error } = await supabase
-                .from('important_info')
-                .update({ 
-                    context, 
-                    confidence,
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', existing.id);
-
-            if (error) throw error;
-            return res.status(200).json({ message: 'Informazione aggiornata' });
-        }
-
-        // Altrimenti inserisci nuova
-        const { error } = await supabase
-            .from('important_info')
-            .insert([{ type, info, context, confidence }]);
+            .insert(dataToInsert)
+            .select();
 
         if (error) throw error;
 
-        return res.status(201).json({ message: 'Informazione salvata' });
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        return res.status(200).json({ 
+            success: true, 
+            saved: data.length,
+            message: `${data.length} informazioni salvate con successo`
+        });
 
     } catch (error) {
-        console.error('Errore in saveImportantInfo:', error);
-        return res.status(500).json({ 
-            error: 'Errore salvataggio informazione',
-            details: error.message 
-        });
+        console.error('Errore salvataggio important_info:', error);
+        return res.status(500).json({ error: 'Errore interno del server' });
     }
 } 

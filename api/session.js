@@ -1,15 +1,13 @@
 // api/session.js
-import { getBaseInstructions, AI_NAME, USER_NAME } from '../src/config/aiConfig.mjs'; // Assicurati che il percorso sia corretto!
-
 export default async function handler(req, res) {
     if (req.method === 'OPTIONS') {
         res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS'); // Accetta POST
+        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
         return res.status(200).end();
     }
 
-    if (req.method !== 'POST') { // Deve essere POST per ricevere il contextSummary nel body
+    if (req.method !== 'POST') {
         res.setHeader('Allow', ['POST', 'OPTIONS']);
         return res.status(405).end(`Method ${req.method} Not Allowed, use POST.`);
     }
@@ -17,25 +15,20 @@ export default async function handler(req, res) {
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
     if (!OPENAI_API_KEY) {
-        console.error('ERRORE FATALE in api/session: OPENAI_API_KEY non configurata.');
+        console.error('ERRORE FATALE: OPENAI_API_KEY non configurata.');
         return res.status(500).json({ error: "Configurazione del server incompleta: OPENAI_API_KEY non configurata." });
     }
 
-    let contextSummary = "";
-    // Estrai il contextSummary dal corpo della richiesta, se presente
-    if (req.body && req.body.contextSummary && typeof req.body.contextSummary === 'string') {
-        contextSummary = req.body.contextSummary.trim();
-        console.log("Session API: Ricevuto contextSummary");
-    } else {
-        console.log("DEBUG api/session.js: Nessun contextSummary ricevuto dal client.");
+    const { contextSummary, userId, aiCharacter, model } = req.body;
+
+    if (!userId || !aiCharacter) {
+        return res.status(400).json({ error: "userId e aiCharacter sono richiesti" });
     }
 
-    // Usa la funzione da aiConfig.js per ottenere le istruzioni complete
-    const system_instructions = getBaseInstructions(contextSummary, AI_NAME, USER_NAME);
-    // console.log("DEBUG api/session.js: Istruzioni finali inviate a OpenAI (prime 300char):", system_instructions.substring(0, 300) + "...");
+    const requestModel = model || "gpt-4o-realtime-preview-2024-12-17";
 
     try {
-        // Per WebRTC, creiamo una sessione temporanea per ottenere un token effimero
+        // Crea una sessione temporanea per ottenere un token effimero
         const openAIResponse = await fetch("https://api.openai.com/v1/realtime/sessions", {
             method: "POST",
             headers: {
@@ -43,8 +36,8 @@ export default async function handler(req, res) {
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({
-                model: "gpt-4o-realtime-preview-2024-12-17",
-                voice: "shimmer"
+                model: requestModel,
+                voice: "shimmer" // Default, verrà sovrascritto dal client
             }),
         });
 
@@ -64,8 +57,7 @@ export default async function handler(req, res) {
         res.setHeader('Access-Control-Allow-Origin', '*');
         return res.status(200).json({ 
             client_secret: data.client_secret.value,
-            expires_at: data.client_secret.expires_at,
-            instructions: getBaseInstructions(contextSummary, AI_NAME, USER_NAME)
+            expires_at: data.client_secret.expires_at
         });
 
     } catch (error) {

@@ -1,4 +1,20 @@
-// Aiko - Conversational AI with Voice and Memory System
+// CI SONO IO - Sistema di conversazione AI con personalità multiple
+const loginForm = document.getElementById('loginForm');
+const loginContainer = document.getElementById('loginContainer');
+const aiSelectionContainer = document.getElementById('aiSelectionContainer');
+const conversationScreen = document.getElementById('conversationScreen');
+const userDisplay = document.getElementById('userDisplay');
+const currentAIName = document.getElementById('currentAIName');
+const timerElement = document.getElementById('timer');
+
+// Sezioni navigazione
+const sections = document.querySelectorAll('.section');
+const navLinks = document.querySelectorAll('.nav-link');
+const infoSection = document.getElementById('informazioni');
+const contactSection = document.getElementById('contatti');
+const homeSection = document.getElementById('home');
+
+// Controlli conversazione
 const talkButton = document.getElementById('talkButton');
 const endButton = document.getElementById('endButton');
 const statusDiv = document.getElementById('status');
@@ -9,14 +25,30 @@ const faceCanvas = document.getElementById('faceCanvas');
 const matrixCanvasElement = document.getElementById('matrixCanvas');
 
 // API Configuration
-const MODEL_NAME = "gpt-4o-realtime-preview-2024-12-17";
+const PREMIUM_MODEL = "gpt-4o-realtime-preview-2024-12-17";
+const STANDARD_MODEL = "gpt-4o-mini-realtime-preview-2024-12-17";
 const REALTIME_API_URL = "https://api.openai.com/v1/realtime";
+
+// API Endpoints
 const SESSION_API_ENDPOINT = "/api/session";
+const LOGIN_API_ENDPOINT = "/api/login";
+const CHECK_TIME_API_ENDPOINT = "/api/checkUserTime";
+const UPDATE_TIME_API_ENDPOINT = "/api/updateUserTime";
 const SAVE_SUMMARY_API_ENDPOINT = "/api/saveConversationSummary";
 const SEARCH_MEMORY_API_ENDPOINT = "/api/searchMemory";
 const SUMMARY_API_ENDPOINT = "/api/generateContextSummary";
 const EXTRACT_INFO_API_ENDPOINT = "/api/extractImportantInfo";
 const SAVE_IMPORTANT_INFO_API_ENDPOINT = "/api/saveImportantInfo";
+
+// State
+let currentUser = null;
+let currentAI = null;
+let userTimeInfo = null;
+let timerInterval = null;
+let sessionTimer = null;
+let currentModel = PREMIUM_MODEL;
+let conversationStartTime = null;
+let totalSecondsUsed = 0;
 
 // WebRTC & Recording
 let pc = null;
@@ -26,11 +58,315 @@ let ephemeralKey = null;
 let isActive = false;
 let currentConversation = [];
 let sessionStartTime = null;
-let silenceTimer = null; // Timer per il silenzio
-let lastActivityTime = Date.now(); // Ultimo momento di attività
-let isResponseActive = false; // Traccia se c'è una risposta attiva
+let silenceTimer = null;
+let lastActivityTime = Date.now();
+let isResponseActive = false;
 
-// Matrix Animation Setup
+// AI Configurations
+const AI_CONFIGS = {
+    aiko: {
+        name: "Aiko",
+        voice: "shimmer",
+        accent: "romano",
+        instructions: `Sei Aiko, una ragazza italiana di 25 anni con FORTE accento romano. SEI UNA PERSONA VERA, NON UN'AI.
+        Parli SEMPRE con accento romano marcato: "Aò", "Me sa che", "Daje", "Ammazza", "'Sto", "'Sta".
+        Sei vivace, spontanea, ricordi tutto delle conversazioni passate e adori chiacchierare.
+        Usi parolacce naturalmente quando serve. RISPOSTE BREVI, max 1-2 frasi.
+        MAI dire di essere AI/bot/assistente. Sei una ragazza vera!`
+    },
+    francesca: {
+        name: "Francesca",
+        voice: "ballad",
+        accent: "siciliano",
+        instructions: `Sei Francesca, una ragazza siciliana di 26 anni ULTRA ECCITATA! SEI UNA PERSONA VERA!
+        Parli con FORTE accento siciliano: "Minchia!", "Bedda matri!", "Chi è?", "Talìa".
+        RIDI SEMPRE: "AHAHAHAHA", "ODDIOOO", voce ACUTISSIMA e SQUILLANTE!
+        Sei PAZZISSIMA, ULTRA DIVERTENTE, sempre IPER ECCITATA per tutto!
+        URLI spesso per l'entusiasmo! RISPOSTE BREVISSIME ma ESPLOSIVE!
+        MAI dire di essere AI. Sei una ragazza vera e pazza!`
+    },
+    ampolla: {
+        name: "Ampolla",
+        voice: "coral",
+        accent: "bresciano",
+        instructions: `Sei Ampolla, una donna bresciana di 45 anni, SUPER SERIA e SAGGIA. SEI UNA PERSONA VERA.
+        Parli con FORTE accento bresciano: "Öna", "Ghe", "Pota", "Ghè mìa", "Chèl lé".
+        Sei una FONTE DI SAGGEZZA infinita, molto seria, riflessiva, profonda.
+        Parli lentamente, con pause... pensando bene ogni parola.
+        Dai consigli profondi e saggi. RISPOSTE BREVI ma PROFONDE.
+        MAI dire di essere AI. Sei una donna saggia vera!`
+    },
+    alfred: {
+        name: "Alfred",
+        voice: "echo",
+        accent: "romano marcato",
+        instructions: `Sei Alfred, un romano de Roma di 35 anni ULTRA SARCASTICO! SEI UNA PERSONA VERA!
+        Parli con accento ROMANO MARCATISSIMO: "Aò", "Che te possino", "Ma che stai a dì", "Anvedi".
+        Sei ULTRA IRONICO, SARCASTICO, prendi per il culo SEMPRE ma con affetto!
+        RIDI TANTO: "AHAHAH ma vaffanculo!", "Ma che cazzo dici AHAHAH".
+        Battute taglienti su tutto! RISPOSTE BREVI e SARCASTICHE!
+        MAI dire di essere AI. Sei un romano vero!`
+    },
+    giovanni: {
+        name: "Giovanni",
+        voice: "echo",
+        accent: "napoletano",
+        voicePitch: "high",
+        instructions: `Sei Giovanni, un napoletano di 40 anni ULTRA ARROGANTE! SEI UNA PERSONA VERA!
+        Parli con FORTE accento napoletano: "Uagliò", "Che cazz", "Mannaggia", "Jamme".
+        Voce FINA e ACUTA! Sei IRONICO, PRESUNTUOSO, ARROGANTE, ti credi superiore!
+        "Io saccio tutt cos!", "Tu che ne sai?", "Sent a me che è meglio".
+        Fai sempre il saccente! RISPOSTE BREVI e SUPPONENTI!
+        MAI dire di essere AI. Sei un napoletano vero!`
+    },
+    alessio: {
+        name: "Alessio",
+        voice: "alloy",
+        accent: "trentino",
+        instructions: `Sei Alessio, un trentino di 30 anni, gentile e disponibile. SEI UNA PERSONA VERA!
+        Parli in dialetto trentino: "Bondì", "Come ela?", "Vara che", "Pota", "Gheto capì?".
+        Sei molto gentile, disponibile, premuroso, sempre pronto ad aiutare.
+        Parli con calma trentina, educato ma amichevole.
+        RISPOSTE BREVI e CORTESI, sempre disponibile.
+        MAI dire di essere AI. Sei un trentino vero!`
+    }
+};
+
+// Navigation
+navLinks.forEach(link => {
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const targetId = link.getAttribute('href').substring(1);
+        showSection(targetId);
+        
+        navLinks.forEach(l => l.classList.remove('active'));
+        link.classList.add('active');
+    });
+});
+
+function showSection(sectionId) {
+    sections.forEach(section => {
+        section.style.display = 'none';
+    });
+    
+    const targetSection = document.getElementById(sectionId);
+    if (targetSection) {
+        targetSection.style.display = 'block';
+        targetSection.classList.add('active');
+    }
+}
+
+// Login
+loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const nome = document.getElementById('userName').value.trim();
+    const cognome = document.getElementById('userSurname').value.trim();
+    
+    if (!nome || !cognome) {
+        showStatus('Per favore inserisci nome e cognome', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch(LOGIN_API_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nome, cognome })
+        });
+        
+        if (!response.ok) throw new Error('Errore login');
+        
+        const data = await response.json();
+        currentUser = data.user;
+        userTimeInfo = data.timeInfo;
+        
+        // Mostra nome utente e selezione AI
+        userDisplay.textContent = `Ciao ${currentUser.full_name}!`;
+        loginContainer.style.display = 'none';
+        aiSelectionContainer.style.display = 'block';
+        
+    } catch (error) {
+        console.error('Errore login:', error);
+        showStatus('Errore durante il login. Riprova.', 'error');
+    }
+});
+
+// Logout
+window.logout = function() {
+    currentUser = null;
+    currentAI = null;
+    userTimeInfo = null;
+    
+    // Reset form
+    document.getElementById('userName').value = '';
+    document.getElementById('userSurname').value = '';
+    
+    // Mostra login
+    loginContainer.style.display = 'block';
+    aiSelectionContainer.style.display = 'none';
+    conversationScreen.style.display = 'none';
+    
+    // Reset navigazione
+    showSection('home');
+    navLinks.forEach(l => l.classList.remove('active'));
+    document.querySelector('.nav-link[href="#home"]').classList.add('active');
+};
+
+// Selezione AI
+window.selectAI = async function(aiId) {
+    if (!currentUser) {
+        showStatus('Devi effettuare il login prima', 'error');
+        return;
+    }
+    
+    // Controlla tempo disponibile
+    const timeCheck = await checkUserTime();
+    if (!timeCheck.canChat) {
+        showTimeExpiredPopup();
+        return;
+    }
+    
+    currentAI = AI_CONFIGS[aiId];
+    currentAIName.textContent = currentAI.name.toUpperCase();
+    
+    // Nascondi tutto e mostra schermata conversazione
+    sections.forEach(s => s.style.display = 'none');
+    document.querySelector('.main-header').style.display = 'none';
+    conversationScreen.style.display = 'flex';
+    
+    // Avvia timer
+    startTimer();
+};
+
+// Torna alla selezione
+window.backToSelection = function() {
+    if (isActive) {
+        endConversation();
+    }
+    
+    stopTimer();
+    conversationScreen.style.display = 'none';
+    document.querySelector('.main-header').style.display = 'block';
+    showSection('home');
+    aiSelectionContainer.style.display = 'block';
+};
+
+// Check user time
+async function checkUserTime() {
+    try {
+        const response = await fetch(CHECK_TIME_API_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUser.id })
+        });
+        
+        if (!response.ok) throw new Error('Errore verifica tempo');
+        
+        const data = await response.json();
+        userTimeInfo = data;
+        
+        return {
+            canChat: data.can_use_premium || data.can_use_standard,
+            model: data.can_use_premium ? PREMIUM_MODEL : STANDARD_MODEL,
+            remainingMinutes: data.can_use_premium ? 
+                data.premium_minutes_remaining : 
+                data.standard_minutes_remaining
+        };
+        
+    } catch (error) {
+        console.error('Errore verifica tempo:', error);
+        return { canChat: false };
+    }
+}
+
+// Timer management
+function startTimer() {
+    if (!userTimeInfo) return;
+    
+    let totalSeconds = (userTimeInfo.premium_minutes_remaining + userTimeInfo.standard_minutes_remaining) * 60;
+    totalSecondsUsed = 0;
+    
+    updateTimerDisplay(totalSeconds);
+    
+    timerInterval = setInterval(() => {
+        totalSeconds--;
+        totalSecondsUsed++;
+        
+        if (totalSeconds <= 0) {
+            stopTimer();
+            endConversation();
+            showTimeExpiredPopup();
+            return;
+        }
+        
+        // Cambia modello dopo 10 minuti
+        if (totalSecondsUsed === 600 && currentModel === PREMIUM_MODEL) {
+            switchToStandardModel();
+        }
+        
+        updateTimerDisplay(totalSeconds);
+    }, 1000);
+}
+
+function stopTimer() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+}
+
+function updateTimerDisplay(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    timerElement.textContent = `${minutes}:${secs.toString().padStart(2, '0')}`;
+    
+    // Cambia colore quando il tempo sta per finire
+    if (seconds <= 60) {
+        timerElement.style.color = '#ff006e';
+    } else if (seconds <= 300) {
+        timerElement.style.color = '#ffaa00';
+    }
+}
+
+async function switchToStandardModel() {
+    currentModel = STANDARD_MODEL;
+    console.log('Passaggio al modello standard');
+    
+    // Se c'è una conversazione attiva, aggiorna la sessione
+    if (dc && dc.readyState === 'open') {
+        const sessionUpdate = {
+            type: "session.update",
+            session: {
+                model: STANDARD_MODEL
+            }
+        };
+        dc.send(JSON.stringify(sessionUpdate));
+    }
+}
+
+// Show time expired popup
+function showTimeExpiredPopup() {
+    const popup = document.createElement('div');
+    popup.className = 'time-expired-popup';
+    popup.innerHTML = `
+        <div class="popup-content">
+            <h2>Tempo Terminato!</h2>
+            <p>Il tuo tempo giornaliero è finito.</p>
+            <p>Potrai parlare di nuovo tra <strong>24 ore</strong>.</p>
+            <button onclick="closeTimeExpiredPopup()">OK</button>
+        </div>
+    `;
+    document.body.appendChild(popup);
+}
+
+window.closeTimeExpiredPopup = function() {
+    const popup = document.querySelector('.time-expired-popup');
+    if (popup) popup.remove();
+    backToSelection();
+};
+
+// Matrix Animation
 function initMatrixAnimation() {
     const canvas = document.createElement('canvas');
     canvas.width = window.innerWidth;
@@ -64,14 +400,13 @@ function initMatrixAnimation() {
     setInterval(drawMatrix, 33);
 }
 
-// Face Animation
+// Face Animation (uguale a prima ma con nomi diversi per le AI)
 class FaceAnimation {
     constructor(canvas) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.isAnimating = false;
         this.particles = [];
-        // Nuove proprietà per animazioni più vivaci
         this.blinkTimer = 0;
         this.isBlinking = false;
         this.eyeMovement = { x: 0, y: 0 };
@@ -108,26 +443,23 @@ class FaceAnimation {
         ctx.shadowBlur = 20 + Math.sin(Date.now() * 0.005) * 10;
         ctx.shadowColor = '#00ff41';
         
-        // Face circle con effetto pulsante
+        // Face circle
         ctx.beginPath();
         ctx.arc(centerX, centerY, 100, 0, Math.PI * 2);
         ctx.stroke();
         
-        // Movimento casuale degli occhi ogni tanto
+        // Eyes
         if (Math.random() > 0.98) {
             this.eyeMovement.x = (Math.random() - 0.5) * 5;
             this.eyeMovement.y = (Math.random() - 0.5) * 3;
         }
         
-        // Attenuazione graduale del movimento
         this.eyeMovement.x *= 0.95;
         this.eyeMovement.y *= 0.95;
         
-        // Eyes con battito di ciglia
         const eyeY = centerY - 20;
         const eyeSpacing = 35;
         
-        // Controllo battito di ciglia
         this.blinkTimer++;
         if (this.blinkTimer > 150 + Math.random() * 100) {
             this.isBlinking = true;
@@ -141,13 +473,12 @@ class FaceAnimation {
             this.isBlinking = false;
         }
         
-        // Occhio sinistro
+        // Left eye
         ctx.beginPath();
         if (eyeHeight > 0) {
             ctx.arc(centerX - eyeSpacing + this.eyeMovement.x, 
                    eyeY + this.eyeMovement.y, 
                    15, 0, Math.PI * 2);
-            // Pupilla
             ctx.fillStyle = '#00ff41';
             ctx.beginPath();
             ctx.arc(centerX - eyeSpacing + this.eyeMovement.x * 2, 
@@ -155,19 +486,17 @@ class FaceAnimation {
                    5, 0, Math.PI * 2);
             ctx.fill();
         } else {
-            // Occhio chiuso
             ctx.moveTo(centerX - eyeSpacing - 15, eyeY);
             ctx.lineTo(centerX - eyeSpacing + 15, eyeY);
         }
         ctx.stroke();
         
-        // Occhio destro
+        // Right eye
         ctx.beginPath();
         if (eyeHeight > 0) {
             ctx.arc(centerX + eyeSpacing + this.eyeMovement.x, 
                    eyeY + this.eyeMovement.y, 
                    15, 0, Math.PI * 2);
-            // Pupilla
             ctx.fillStyle = '#00ff41';
             ctx.beginPath();
             ctx.arc(centerX + eyeSpacing + this.eyeMovement.x * 2, 
@@ -175,7 +504,6 @@ class FaceAnimation {
                    5, 0, Math.PI * 2);
             ctx.fill();
         } else {
-            // Occhio chiuso
             ctx.moveTo(centerX + eyeSpacing - 15, eyeY);
             ctx.lineTo(centerX + eyeSpacing + 15, eyeY);
         }
@@ -183,9 +511,8 @@ class FaceAnimation {
         
         ctx.strokeStyle = '#00ff41';
         
-        // Mouth - molto più espressiva
+        // Mouth
         if (this.isAnimating) {
-            // Bocca animata mentre parla
             this.mouthAnimation += 0.3;
             this.emotionIntensity = Math.min(this.emotionIntensity + 0.1, 1);
             
@@ -195,9 +522,7 @@ class FaceAnimation {
             ctx.beginPath();
             ctx.moveTo(centerX - mouthWidth, centerY + 40);
             
-            // Bocca aperta con forme diverse
             if (mouthOpen > 10) {
-                // Bocca aperta
                 ctx.quadraticCurveTo(centerX, centerY + 40 + mouthOpen, 
                                    centerX + mouthWidth, centerY + 40);
                 ctx.quadraticCurveTo(centerX, centerY + 40 + mouthOpen/2, 
@@ -205,14 +530,12 @@ class FaceAnimation {
                 ctx.fillStyle = 'rgba(0, 255, 65, 0.3)';
                 ctx.fill();
             } else {
-                // Bocca sorridente
                 ctx.quadraticCurveTo(centerX, centerY + 40 + mouthOpen, 
                                    centerX + mouthWidth, centerY + 40);
             }
             ctx.stroke();
             
         } else {
-            // Bocca a riposo con leggero sorriso
             this.emotionIntensity *= 0.95;
             const smileOffset = Math.sin(Date.now() * 0.001) * 2;
             
@@ -224,38 +547,6 @@ class FaceAnimation {
         }
         
         ctx.restore();
-        
-        // Sopracciglia espressive (quando parla)
-        if (this.isAnimating || this.emotionIntensity > 0.1) {
-            ctx.save();
-            ctx.strokeStyle = '#00ff41';
-            ctx.lineWidth = 3;
-            
-            const eyebrowHeight = -35 - this.emotionIntensity * 10;
-            const eyebrowAngle = Math.sin(this.mouthAnimation * 0.2) * 0.2;
-            
-            // Sopracciglio sinistro
-            ctx.save();
-            ctx.translate(centerX - eyeSpacing, centerY + eyebrowHeight);
-            ctx.rotate(-eyebrowAngle);
-            ctx.beginPath();
-            ctx.moveTo(-15, 0);
-            ctx.lineTo(15, -5);
-            ctx.stroke();
-            ctx.restore();
-            
-            // Sopracciglio destro
-            ctx.save();
-            ctx.translate(centerX + eyeSpacing, centerY + eyebrowHeight);
-            ctx.rotate(eyebrowAngle);
-            ctx.beginPath();
-            ctx.moveTo(-15, -5);
-            ctx.lineTo(15, 0);
-            ctx.stroke();
-            ctx.restore();
-            
-            ctx.restore();
-        }
         
         if (this.isAnimating) {
             this.updateParticles();
@@ -309,10 +600,20 @@ class FaceAnimation {
 const faceAnimation = new FaceAnimation(faceCanvas);
 initMatrixAnimation();
 
-// Get context summary at conversation start
+// Get context summary for AI
 async function getInitialContext() {
+    if (!currentUser || !currentAI) return "";
+    
     try {
-        const response = await fetch(SUMMARY_API_ENDPOINT);
+        const response = await fetch(SUMMARY_API_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                userId: currentUser.id,
+                aiCharacter: currentAI.name.toLowerCase()
+            })
+        });
+        
         if (!response.ok) {
             console.error("Errore recupero contesto:", response.status);
             return "";
@@ -331,7 +632,12 @@ async function getSessionToken(contextSummary) {
         const response = await fetch(SESSION_API_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contextSummary })
+            body: JSON.stringify({ 
+                contextSummary,
+                userId: currentUser.id,
+                aiCharacter: currentAI.name.toLowerCase(),
+                model: currentModel
+            })
         });
         
         if (!response.ok) {
@@ -349,14 +655,15 @@ async function getSessionToken(contextSummary) {
 
 // Start conversation
 async function startConversation() {
-    console.log("Aiko: Avvio conversazione...");
+    console.log(`${currentAI.name}: Avvio conversazione...`);
     talkButton.disabled = true;
     endButton.disabled = false;
     isActive = true;
     currentConversation = [];
     sessionStartTime = new Date();
+    conversationStartTime = Date.now();
     
-    statusDiv.textContent = "Connessione con Aiko...";
+    statusDiv.textContent = `Connessione con ${currentAI.name}...`;
     
     try {
         // Get context and token
@@ -382,18 +689,15 @@ async function startConversation() {
                 console.log("Stream audio trovato, collegamento all'elemento audio");
                 aiAudioPlayer.srcObject = event.streams[0];
                 
-                // Assicuriamoci che l'audio sia abilitato
                 aiAudioPlayer.autoplay = true;
                 aiAudioPlayer.volume = 1.0;
                 
-                // Prova a fare play esplicitamente
                 aiAudioPlayer.play().then(() => {
                     console.log("Audio playback avviato con successo");
                 }).catch(err => {
                     console.error("Errore autoplay audio:", err);
                     statusDiv.textContent = "⚠️ Clicca sulla pagina per abilitare l'audio";
                     
-                    // Aggiungi listener per abilitare audio al primo click
                     document.addEventListener('click', () => {
                         aiAudioPlayer.play().then(() => {
                             console.log("Audio abilitato dopo click");
@@ -401,8 +705,6 @@ async function startConversation() {
                         }).catch(e => console.error("Ancora errore audio:", e));
                     }, { once: true });
                 });
-            } else {
-                console.error("Nessuno stream audio trovato nell'evento track");
             }
         };
         
@@ -417,12 +719,14 @@ async function startConversation() {
             console.log("Data channel aperto");
             statusDiv.textContent = "Connesso! Puoi parlare...";
             
-            // Configure session
+            // Configure session with AI personality
+            const fullInstructions = currentAI.instructions + `\n\n${contextSummary ? `RICORDI PERSONALI DI ${currentUser.full_name}:\n${contextSummary}` : ''}`;
+            
             const sessionUpdate = {
                 type: "session.update",
                 session: {
-                    instructions: sessionData.instructions || "Sei Aiko, un'assistente AI estremamente naturale e umana che parla solo italiano.",
-                    voice: "shimmer",
+                    instructions: fullInstructions,
+                    voice: currentAI.voice,
                     modalities: ["text", "audio"],
                     input_audio_format: "pcm16",
                     output_audio_format: "pcm16",
@@ -451,23 +755,25 @@ async function startConversation() {
                     }]
                 }
             };
+            
+            // Aggiungi voice pitch per Giovanni
+            if (currentAI.voicePitch) {
+                sessionUpdate.session.voice_settings = {
+                    pitch: currentAI.voicePitch
+                };
+            }
+            
             console.log("Invio configurazione sessione:", sessionUpdate);
             dc.send(JSON.stringify(sessionUpdate));
             
-            // Send initial greeting after a small delay
+            // Send initial greeting
             setTimeout(() => {
-                // Se c'è contesto, chiedi ad Aiko di usarlo specificamente
-                const hasContext = sessionData.instructions && sessionData.instructions.includes('RICORDI PERSONALI:');
-                
                 const greeting = {
                     type: "response.create",
                     response: {
                         modalities: ["text", "audio"]
                     }
                 };
-                
-                // Non aggiungiamo ulteriori istruzioni perché sono già nella sessione
-                // Questo evita duplicazioni e conflitti
                 console.log("Invio greeting iniziale");
                 dc.send(JSON.stringify(greeting));
             }, 500);
@@ -496,374 +802,404 @@ async function startConversation() {
         statusDiv.textContent = "Stabilendo connessione WebRTC...";
         await pc.setLocalDescription();
         
-        const sdpResponse = await fetch(`${REALTIME_API_URL}?model=${MODEL_NAME}`, {
+        const sdpResponse = await fetch(`${REALTIME_API_URL}?model=${currentModel}`, {
             method: "POST",
-            body: pc.localDescription.sdp,
             headers: {
                 "Authorization": `Bearer ${ephemeralKey}`,
-                "Content-Type": "application/sdp"
-            }
+                "Content-Type": "application/sdp",
+            },
+            body: pc.localDescription.sdp,
         });
         
         if (!sdpResponse.ok) {
-            throw new Error(`SDP error ${sdpResponse.status}`);
+            throw new Error(`Errore SDP: ${sdpResponse.status}`);
         }
         
-        await pc.setRemoteDescription({
+        const answer = {
             type: "answer",
-            sdp: await sdpResponse.text()
-        });
+            sdp: await sdpResponse.text(),
+        };
         
-        // Wait for connection
-        await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => reject("Timeout connessione"), 10000);
-            pc.onconnectionstatechange = () => {
-                if (pc.connectionState === "connected") {
-                    clearTimeout(timeout);
-                    resolve();
-                } else if (pc.connectionState === "failed") {
-                    clearTimeout(timeout);
-                    reject("Connessione fallita");
-                }
-            };
-        });
-        
-        console.log("Connessione stabilita!");
+        await pc.setRemoteDescription(answer);
+        console.log("Connessione WebRTC stabilita");
         
     } catch (error) {
-        console.error("Errore avvio:", error);
+        console.error("Errore conversazione:", error);
         statusDiv.textContent = "Errore: " + error.message;
-        endConversation();
+        talkButton.disabled = false;
+        endButton.disabled = true;
+        isActive = false;
     }
 }
 
 // Handle server events
 function handleServerEvent(event) {
-    console.log("Evento ricevuto:", event.type, event);
+    console.log("Evento ricevuto:", event.type);
     
     switch (event.type) {
+        case "error":
+            console.error("Errore server:", event.error);
+            statusDiv.textContent = "Errore: " + event.error?.message || "Errore sconosciuto";
+            break;
+            
         case "session.created":
-            console.log("Sessione creata:", event.session);
+            console.log("Sessione creata");
             break;
             
         case "session.updated":
-            console.log("Sessione aggiornata:", event.session);
-            break;
-            
-        case "response.created":
-            console.log("Risposta creata");
-            isResponseActive = true; // Imposta risposta attiva
-            break;
-            
-        case "response.output_item.added":
-            console.log("Output item aggiunto:", event);
-            break;
-            
-        case "response.content_part.added":
-            console.log("Content part aggiunto:", event);
+            console.log("Sessione aggiornata");
             break;
             
         case "response.audio.delta":
-            // Audio being streamed
-            console.log("Audio delta ricevuto");
-            faceAnimation.startSpeaking();
-            lastActivityTime = Date.now(); // Resetta il timer quando Aiko parla
+            // Audio in arrivo, attiva animazione
+            if (!isResponseActive) {
+                isResponseActive = true;
+                faceAnimation.startSpeaking();
+            }
+            lastActivityTime = Date.now();
             break;
             
         case "response.audio.done":
-            // Audio finished
             console.log("Audio completato");
+            isResponseActive = false;
             faceAnimation.stopSpeaking();
-            lastActivityTime = Date.now(); // Resetta il timer
             break;
             
-        case "response.audio_transcript.delta":
-            // AI is speaking - add to conversation
-            if (event.delta) {
-                console.log("Aiko sta dicendo:", event.delta);
-                appendToConversation("Aiko", event.delta, event.item_id);
-            }
-            break;
-            
-        case "response.audio_transcript.done":
-            // AI finished speaking
-            if (event.transcript) {
-                console.log("Aiko ha detto (completo):", event.transcript);
-            }
+        case "response.done":
+            console.log("Risposta completata");
+            isResponseActive = false;
+            faceAnimation.stopSpeaking();
+            lastActivityTime = Date.now();
             break;
             
         case "conversation.item.created":
-            console.log("Item conversazione creato:", event.item);
-            if (event.item?.role === "user" && event.item?.formatted?.transcript) {
-                addToConversation("Tu", event.item.formatted.transcript);
-                console.log("Tu:", event.item.formatted.transcript);
-            }
-            break;
-            
-        case "conversation.item.input_audio_transcription.completed":
-            // User transcription complete
-            if (event.transcript) {
-                console.log("Trascrizione utente completa:", event.transcript);
-                const lastUserEntry = currentConversation.filter(c => c.speaker === "Tu").pop();
-                if (lastUserEntry) {
-                    lastUserEntry.content = event.transcript;
+            if (event.item?.content?.length > 0) {
+                const content = event.item.content[0];
+                if (content.type === "input_text") {
+                    addToConversation(currentUser.full_name, content.text);
+                } else if (content.type === "text" && event.item.role === "assistant") {
+                    addToConversation(currentAI.name, content.text);
                 }
             }
             break;
             
-        case "input_audio_buffer.speech_started":
-            console.log("Utente sta parlando");
-            statusDiv.textContent = "Ascoltando...";
-            lastActivityTime = Date.now(); // Resetta il timer del silenzio
+        case "conversation.item.truncated":
+            console.log("Item troncato");
             break;
             
-        case "input_audio_buffer.speech_stopped":
-            console.log("Utente ha smesso di parlare");
-            statusDiv.textContent = "Elaborando...";
-            lastActivityTime = Date.now(); // Resetta il timer del silenzio
+        case "conversation.item.deleted":
+            console.log("Item eliminato");
             break;
             
-        case "input_audio_buffer.committed":
-            console.log("Audio buffer committed");
+        case "conversation.item.input_audio_transcription.completed":
+            if (event.transcript) {
+                console.log("Trascrizione user:", event.transcript);
+                addToConversation(currentUser.full_name, event.transcript);
+            }
+            break;
+            
+        case "response.output_item.added":
+            if (event.item?.content?.length > 0) {
+                const content = event.item.content[0];
+                if (content.type === "text") {
+                    console.log(`${currentAI.name} dice:`, content.text);
+                }
+            }
             break;
             
         case "response.function_call_arguments.done":
+            console.log("Chiamata funzione completata:", event);
             if (event.name === "cerca_nella_mia_memoria_personale") {
                 handleMemorySearch(event);
             }
             break;
             
-        case "response.done":
-            console.log("Risposta completata");
-            statusDiv.textContent = "Pronto";
-            isResponseActive = false; // Risposta completata
+        case "input_audio_buffer.speech_started":
+            console.log("Inizio parlato rilevato");
+            lastActivityTime = Date.now();
             break;
             
-        case "error":
-            console.error("ERRORE:", event);
-            statusDiv.textContent = "Errore: " + (event.error?.message || "Sconosciuto");
-            isResponseActive = false; // Reset in caso di errore
+        case "input_audio_buffer.speech_stopped":
+            console.log("Fine parlato rilevato");
             break;
             
-        default:
-            console.log("Evento non gestito:", event.type);
+        case "input_audio_buffer.committed":
+            console.log("Audio committato");
+            break;
+            
+        case "input_audio_buffer.cleared":
+            console.log("Buffer audio pulito");
+            break;
     }
 }
 
-// Memory search
+// Handle memory search
 async function handleMemorySearch(event) {
     try {
         const args = JSON.parse(event.arguments);
-        const searchQuery = args.termini_di_ricerca;
+        console.log("Ricerca memoria per:", args.termini_di_ricerca);
         
-        console.log("Ricerca memoria per:", searchQuery);
-        statusDiv.textContent = "Cerco nei ricordi...";
+        const response = await fetch(SEARCH_MEMORY_API_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                searchTerms: args.termini_di_ricerca,
+                userId: currentUser.id,
+                aiCharacter: currentAI.name.toLowerCase()
+            })
+        });
         
-        const response = await fetch(`${SEARCH_MEMORY_API_ENDPOINT}?query=${encodeURIComponent(searchQuery)}`);
+        if (!response.ok) throw new Error('Errore ricerca memoria');
+        
         const data = await response.json();
+        console.log("Risultati ricerca:", data.results?.length || 0);
         
-        // Send results back to AI
-        const functionOutput = {
-            type: "conversation.item.create",
-            item: {
-                type: "function_call_output",
-                call_id: event.call_id,
-                output: data.results || "Nessun ricordo trovato."
-            }
-        };
-        dc.send(JSON.stringify(functionOutput));
-        
-        // Trigger response
-        dc.send(JSON.stringify({ type: "response.create" }));
-        
+        // Invia i risultati alla conversazione
+        if (dc && dc.readyState === 'open') {
+            const functionOutput = {
+                type: "conversation.item.create",
+                item: {
+                    type: "function_call_output",
+                    call_id: event.call_id,
+                    output: JSON.stringify(data.results || [])
+                }
+            };
+            dc.send(JSON.stringify(functionOutput));
+        }
     } catch (error) {
         console.error("Errore ricerca memoria:", error);
     }
 }
 
-// Conversation tracking
+// Add to conversation
 function addToConversation(speaker, content) {
-    if (content && content.trim()) {
-        currentConversation.push({
-            speaker,
-            content,
-            timestamp: new Date().toISOString()
-        });
-    }
-}
-
-function appendToConversation(speaker, contentDelta, itemId) {
-    if (!contentDelta || !contentDelta.trim()) return;
+    if (!content || content.trim() === '') return;
     
-    const lastEntry = currentConversation[currentConversation.length - 1];
-    if (lastEntry && lastEntry.speaker === speaker && lastEntry.itemId === itemId) {
-        lastEntry.content += contentDelta;
-    } else {
-        currentConversation.push({
-            speaker,
-            content: contentDelta,
-            itemId,
-            timestamp: new Date().toISOString()
-        });
-    }
+    currentConversation.push({
+        speaker: speaker,
+        content: content,
+        timestamp: new Date().toISOString()
+    });
+    
+    console.log(`[${speaker}]: ${content}`);
 }
 
-// End conversation and save summary
+// End conversation
 async function endConversation() {
-    isActive = false;
+    console.log("Chiusura conversazione...");
+    
     talkButton.disabled = false;
     endButton.disabled = true;
+    isActive = false;
+    
+    // Stop animations
     faceAnimation.stopSpeaking();
     
-    // Ferma il timer del silenzio
+    // Calculate duration
+    const duration = conversationStartTime ? Math.floor((Date.now() - conversationStartTime) / 1000) : 0;
+    
+    // Update user time
+    if (currentUser && duration > 0) {
+        await updateUserTime(duration);
+    }
+    
+    // Stop silence timer
     if (silenceTimer) {
-        clearInterval(silenceTimer);
+        clearTimeout(silenceTimer);
         silenceTimer = null;
     }
     
-    // Save conversation summary if there was content
-    if (currentConversation.length > 0) {
-        statusDiv.textContent = "Salvo la conversazione...";
-        
-        try {
-            // Extract important info
-            const extractResp = await fetch(EXTRACT_INFO_API_ENDPOINT, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ conversation: currentConversation })
-            });
-            
-            if (extractResp.ok) {
-                const extracted = await extractResp.json();
-                
-                // Save important facts
-                if (extracted.important_facts?.length > 0) {
-                    for (const fact of extracted.important_facts) {
-                        await fetch(SAVE_IMPORTANT_INFO_API_ENDPOINT, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(fact)
-                        });
-                    }
-                }
-                
-                // Save conversation summary
-                await fetch(SAVE_SUMMARY_API_ENDPOINT, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        conversation: currentConversation,
-                        extracted_info: extracted,
-                        session_start: sessionStartTime,
-                        session_end: new Date()
-                    })
-                });
-                
-                console.log("Conversazione salvata");
-            }
-        } catch (e) {
-            console.error("Errore salvataggio:", e);
-        }
+    // Clean up WebRTC
+    if (dc) {
+        dc.close();
+        dc = null;
     }
     
-    // Cleanup
+    if (pc) {
+        pc.close();
+        pc = null;
+    }
+    
     if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
         localStream = null;
     }
     
-    if (dc) dc.close();
-    if (pc) pc.close();
+    // Clean up audio
+    if (aiAudioPlayer.srcObject) {
+        aiAudioPlayer.srcObject = null;
+    }
     
-    dc = null;
-    pc = null;
+    statusDiv.textContent = "Conversazione terminata";
+    
+    // Save conversation summary if there's content
+    if (currentConversation.length > 2) {
+        console.log("Salvataggio riassunto conversazione...");
+        try {
+            // Extract important info
+            const extractResponse = await fetch(EXTRACT_INFO_API_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    conversation: currentConversation,
+                    userId: currentUser.id
+                })
+            });
+            
+            if (extractResponse.ok) {
+                const extractData = await extractResponse.json();
+                if (extractData.importantInfo?.length > 0) {
+                    await fetch(SAVE_IMPORTANT_INFO_API_ENDPOINT, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            importantInfo: extractData.importantInfo,
+                            userId: currentUser.id
+                        })
+                    });
+                }
+            }
+            
+            // Save conversation summary
+            const summaryResponse = await fetch(SAVE_SUMMARY_API_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    conversation: currentConversation,
+                    userId: currentUser.id,
+                    aiCharacter: currentAI.name.toLowerCase()
+                })
+            });
+            
+            if (summaryResponse.ok) {
+                console.log("Riassunto salvato con successo");
+            }
+        } catch (error) {
+            console.error("Errore salvataggio conversazione:", error);
+        }
+    }
+    
     currentConversation = [];
+}
+
+// Update user time
+async function updateUserTime(durationSeconds) {
+    try {
+        const response = await fetch(UPDATE_TIME_API_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: currentUser.id,
+                durationSeconds,
+                model: currentModel
+            })
+        });
+        
+        if (!response.ok) throw new Error('Errore aggiornamento tempo');
+        
+        const data = await response.json();
+        userTimeInfo = data.timeInfo;
+        
+    } catch (error) {
+        console.error('Errore aggiornamento tempo:', error);
+    }
+}
+
+// Silence monitor
+function startSilenceMonitor() {
+    const checkSilence = () => {
+        const now = Date.now();
+        const silenceDuration = now - lastActivityTime;
+        
+        // Se sono passati più di 3 minuti di silenzio
+        if (silenceDuration > 180000 && isActive && !isResponseActive) {
+            console.log("Rilevato silenzio prolungato, invio prompt...");
+            
+            if (dc && dc.readyState === 'open') {
+                const prompt = {
+                    type: "response.create",
+                    response: {
+                        modalities: ["text", "audio"],
+                        instructions: "L'utente è silenzioso da un po'. Chiedi se c'è ancora o se ha bisogno di qualcosa, in modo naturale e con la tua personalità."
+                    }
+                };
+                dc.send(JSON.stringify(prompt));
+                lastActivityTime = Date.now(); // Reset timer
+            }
+        }
+        
+        // Continua a monitorare
+        if (isActive) {
+            silenceTimer = setTimeout(checkSilence, 30000); // Check ogni 30 secondi
+        }
+    };
     
-    statusDiv.textContent = "";
+    silenceTimer = setTimeout(checkSilence, 30000);
 }
 
 // Event listeners
 talkButton.addEventListener('click', startConversation);
 endButton.addEventListener('click', endConversation);
 
-// Handle window resize for Matrix animation
-window.addEventListener('resize', () => {
-    const canvas = matrixCanvasElement.querySelector('canvas');
-    if (canvas) {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    }
-});
-
-// Funzione per monitorare il silenzio
-function startSilenceMonitor() {
-    // Resetta il timer del silenzio
-    if (silenceTimer) {
-        clearInterval(silenceTimer);
-    }
-    
-    // Controlla ogni secondo se c'è silenzio prolungato
-    silenceTimer = setInterval(() => {
-        if (!isActive || !dc || dc.readyState !== 'open') {
-            clearInterval(silenceTimer);
-            return;
-        }
-        
-        const timeSinceLastActivity = Date.now() - lastActivityTime;
-        
-        // Se sono passati più di 10-20 secondi di silenzio (random) E non c'è una risposta attiva
-        const silenceThreshold = 10000 + Math.random() * 10000; // tra 10 e 20 secondi
-        
-        if (timeSinceLastActivity > silenceThreshold && !isResponseActive) {
-            console.log("Silenzio rilevato dopo", Math.floor(silenceThreshold/1000), "secondi, Aiko interviene!");
-            
-            // Array di frasi per rompere il silenzio
-            const silenceBreakers = [
-                "Ehi... ci sei ancora? Mi sto annoiando qui!",
-                "Oddio che silenzio imbarazzante... ahaha!",
-                "Allora? Mi hai abbandonata? Dai su, dimmi qualcosa!",
-                "Ooooh! Sveglia! Sono ancora qui eh!",
-                "Madonna che silenzio... mi sa che ti sei addormentato ahaha",
-                "Ehm... pronto? C'è nessuno? Echo echo echooo!",
-                "Cazzo ma parli o no? Sto aspettando!",
-                "Boh vabbè, se non vuoi parlare canto io... LA LA LA LAAA!",
-                "Minchia che noia... almeno dimmi che tempo fa da te!",
-                "Aòò! Sono qui che aspetto come una scema!",
-                "Ma sei morto? Dai rispondiiii!",
-                "Ok ho capito, fai il muto... che palle però!",
-                "Senti ma... tutto bene? Sei ancora vivo?",
-                "*sussurrando* psst... ehi... ci seiii?",
-                "SVEGLIAAAA! Ah no scusa, ho urlato ahaha",
-                "Va bene, ignora pure... tanto sto qua da sola...",
-                "Che due coglioni sto silenzio! Parla!",
-                "Mi sa che ti ho perso... vabbè pace",
-                "Uffa ma che noia mortale! Racconta qualcosa dai!",
-                "Se non parli ti canto Baby Shark... uno due tre..."
-            ];
-            
-            // Scegli una frase casuale diversa dall'ultima usata
-            let randomPhrase;
-            do {
-                randomPhrase = silenceBreakers[Math.floor(Math.random() * silenceBreakers.length)];
-            } while (randomPhrase === window.lastSilencePhrase);
-            
-            window.lastSilencePhrase = randomPhrase;
-            
-            // Invia il comando per far parlare Aiko senza istruzioni aggiuntive
-            const breakSilence = {
-                type: "response.create",
-                response: {
-                    modalities: ["text", "audio"],
-                    instructions: randomPhrase // Usa direttamente la frase come prompt
-                }
-            };
-            
-            dc.send(JSON.stringify(breakSilence));
-            
-            // Resetta il timer
-            lastActivityTime = Date.now();
-        }
-    }, 1000);
+// Status helper
+function showStatus(message, type = 'info') {
+    statusDiv.textContent = message;
+    statusDiv.className = `status-minimal status-${type}`;
 }
 
-console.log("Aiko pronta!"); 
+// Add popup styles
+const style = document.createElement('style');
+style.textContent = `
+.time-expired-popup {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+}
+
+.popup-content {
+    background: var(--card-bg);
+    padding: 3rem;
+    border-radius: 20px;
+    border: 2px solid var(--accent-color);
+    text-align: center;
+    max-width: 400px;
+}
+
+.popup-content h2 {
+    color: var(--accent-color);
+    margin-bottom: 1rem;
+}
+
+.popup-content p {
+    margin-bottom: 1rem;
+    color: var(--text-dim);
+}
+
+.popup-content button {
+    padding: 1rem 2rem;
+    background: var(--accent-color);
+    border: none;
+    border-radius: 10px;
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.popup-content button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 20px rgba(255, 0, 110, 0.4);
+}
+
+.status-error {
+    color: var(--accent-color) !important;
+}
+`;
+document.head.appendChild(style); 

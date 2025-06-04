@@ -1,14 +1,27 @@
-# Aiko - AI Conversazionale Vocale
+# CI SONO IO - Conversazioni Autentiche con AI
 
-Un'app minimalista per conversazioni vocali naturali con un'intelligenza artificiale che ricorda tutto.
+Una piattaforma innovativa per conversazioni vocali naturali con intelligenze artificiali che hanno personalità uniche e ricordano tutto di te.
 
 ## 🎯 Caratteristiche
 
-- **Solo voce**: Interfaccia ultra-semplice con solo 2 pulsanti (Parla/Chiudi)
-- **Memoria intelligente**: Aiko ricorda le conversazioni precedenti tramite riassunti concisi
-- **Estrazione automatica**: Salva automaticamente informazioni importanti (nomi, date, preferenze)
-- **Ricerca contestuale**: Accede alla memoria solo quando necessario
-- **Interfaccia Matrix**: Animazione stile Matrix con viso femminile che parla
+- **6 AI con personalità uniche**: 3 femminili (Aiko, Francesca, Ampolla) e 3 maschili (Alfred, Giovanni, Alessio)
+- **Memoria personalizzata**: Ogni AI ricorda le conversazioni precedenti con ogni utente
+- **Sistema di tempo giornaliero**: 10 minuti premium + 10 minuti standard al giorno
+- **Login semplice**: Solo nome e cognome per accedere
+- **Interfaccia elegante**: Design moderno con effetto Matrix
+- **Solo voce**: Conversazioni naturali in tempo reale
+
+## 🤖 Le Personalità
+
+### AI Femminili
+- **Aiko**: Vivace romana di 25 anni, spontanea e affettuosa
+- **Francesca**: Siciliana ultra eccitata, divertentissima e squillante
+- **Ampolla**: Bresciana saggia e riflessiva, fonte di saggezza
+
+### AI Maschili
+- **Alfred**: Romano sarcastico e ironico, prende in giro con affetto
+- **Giovanni**: Napoletano arrogante e presuntuoso, sempre saccente
+- **Alessio**: Trentino gentile e disponibile, sempre pronto ad aiutare
 
 ## 🛠️ Tecnologie
 
@@ -16,41 +29,39 @@ Un'app minimalista per conversazioni vocali naturali con un'intelligenza artific
 - **Voice API**: OpenAI Realtime API (WebRTC)
 - **Database**: Supabase (PostgreSQL)
 - **Hosting**: Vercel (serverless)
-- **AI Models**: GPT-4 Realtime + GPT-4 Mini
+- **AI Models**: 
+  - GPT-4o Realtime (primi 10 minuti)
+  - GPT-4o Mini Realtime (secondi 10 minuti)
 
 ## 📁 Struttura
 
 ```
 /
-├── index.html          # Interfaccia minimale
-├── style.css           # Stile Matrix/cyberpunk
-├── script.js           # Logica WebRTC e animazioni
+├── index.html          # Homepage con login e selezione AI
+├── style.css           # Stile moderno con effetto Matrix
+├── script.js           # Logica principale e gestione conversazioni
 ├── api/
-│   ├── session.js              # Token OpenAI
-│   ├── saveConversationSummary.js  # Salva riassunti
-│   ├── generateContextSummary.js   # Recupera contesto
-│   ├── searchMemory.js         # Cerca nella memoria
-│   ├── extractImportantInfo.js # Estrae info importanti
-│   └── saveImportantInfo.js    # Salva info importanti
-└── src/config/
-    └── aiConfig.mjs    # Personalità di Aiko
+│   ├── login.js                    # Gestione login utenti
+│   ├── checkUserTime.js           # Verifica tempo disponibile
+│   ├── updateUserTime.js          # Aggiorna tempo utilizzato
+│   ├── session.js                 # Token OpenAI per WebRTC
+│   ├── saveConversationSummary.js # Salva riassunti conversazioni
+│   ├── generateContextSummary.js  # Genera contesto per AI
+│   ├── searchMemory.js           # Cerca nella memoria
+│   ├── extractImportantInfo.js   # Estrae info importanti
+│   └── saveImportantInfo.js      # Salva info importanti
+└── database_schema.sql            # Schema database completo
 ```
 
 ## 🗄️ Database Schema
 
-### conversation_summaries
-- Riassunti concisi di ogni conversazione
-- Punti chiave, emozioni, topics
-- Menzioni di persone/luoghi/eventi
-
-### important_info
-- Informazioni estratte automaticamente
-- Categorizzate (famiglia, preferenze, progetti, etc.)
-- Con livello di confidenza
-
-### memoria_chat
-- Solo ultime 48 ore (buffer temporaneo)
-- Pulizia automatica
+### Tabelle principali
+- **users**: Gestione utenti (nome, cognome)
+- **user_time_tracking**: Tracciamento tempo giornaliero
+- **conversation_sessions**: Sessioni di conversazione
+- **conversation_summaries**: Riassunti per memoria a lungo termine
+- **important_info**: Informazioni importanti estratte
+- **ai_characters**: Configurazione delle 6 AI
 
 ## 🚀 Setup
 
@@ -64,6 +75,7 @@ Un'app minimalista per conversazioni vocali naturali con un'intelligenza artific
 2. **Database Supabase:**
    - Esegui `database_schema.sql`
    - Abilita Row Level Security
+   - Crea le funzioni RPC necessarie
 
 3. **Deploy su Vercel:**
    ```bash
@@ -72,35 +84,37 @@ Un'app minimalista per conversazioni vocali naturali con un'intelligenza artific
 
 ## 💬 Come funziona
 
-1. **Inizio conversazione**: Aiko recupera contesto dalle conversazioni precedenti
-2. **Durante la conversazione**: Audio in tempo reale via WebRTC
-3. **Fine conversazione**: 
-   - Estrae informazioni importanti
-   - Genera e salva riassunto
-   - Aggiorna memoria permanente
+1. **Login**: L'utente inserisce nome e cognome
+2. **Selezione AI**: Sceglie una delle 6 personalità disponibili
+3. **Conversazione**: 
+   - Primi 10 minuti con modello premium
+   - Successivi 10 minuti con modello standard
+   - Timer visibile in alto a destra
+4. **Memoria**: Ogni AI ricorda tutto delle conversazioni precedenti con quell'utente
+5. **Reset giornaliero**: Il tempo si resetta ogni 24 ore
 
 ## 🎨 Interfaccia
 
-- **Background**: Effetto Matrix animato
-- **Centro**: Viso stilizzato che si anima quando Aiko parla
-- **Controlli**: Solo PARLA e CHIUDI
-- **Feedback**: Indicatore vocale e status minimale
+- **Homepage**: Login e griglia di selezione AI
+- **Conversazione**: Viso animato dell'AI con effetto Matrix
+- **Timer**: Countdown del tempo rimanente
+- **Navigazione**: Sezioni Info e Contatti
 
-## 🤖 Personalità di Aiko
+## 🔒 Privacy
 
-- Estremamente umana e naturale
-- Ricorda tutto delle conversazioni passate
-- Usa la memoria in modo intelligente
-- Si adatta allo stile comunicativo dell'utente
-- Parla italiano con personalità vivace
+- Ogni utente ha memoria separata
+- Le AI non condividono informazioni tra utenti diversi
+- Retention configurabile delle conversazioni
 
-## 📝 Note
+## 📝 Note per lo sviluppo
 
-- Nessuna trascrizione visibile (solo voce)
-- Memoria basata su riassunti, non conversazioni complete
-- Privacy: retention configurabile
-- Performance: ricerche ottimizzate con indici PostgreSQL
+- Le AI devono sempre comportarsi come persone vere
+- Mai rivelare di essere intelligenze artificiali
+- Ogni AI mantiene coerentemente la propria personalità
+- Sistema di memoria basato su riassunti per efficienza
 
 ---
 
-Made with ❤️ by Alejandro 
+Creato con ❤️ da Alejandro Aguilar
+
+**CI SONO IO** - Dove le conversazioni prendono vita 

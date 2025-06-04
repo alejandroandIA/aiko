@@ -1,7 +1,7 @@
 {
-  "name": "aiko-voice-ai",
+  "name": "ci-sono-io",
   "version": "1.0.0",
-  "description": "Aiko - AI Conversazionale Vocale",
+  "description": "CI SONO IO - Conversazioni Autentiche con AI",
   "type": "module",
   "private": true,
   "scripts": {

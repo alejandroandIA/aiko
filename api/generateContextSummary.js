@@ -1,140 +1,120 @@
 // api/generateContextSummary.js
 import { createClient } from '@supabase/supabase-js';
+import OpenAI from 'openai';
 
 export default async function handler(req, res) {
-    if (req.method !== 'GET') {
-        return res.status(405).json({ error: 'Metodo non consentito. Usa GET.' });
+    if (req.method === 'OPTIONS') {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        return res.status(200).end();
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
-    
-    if (!supabaseUrl || !supabaseServiceKey) {
-        return res.status(500).json({ error: 'Configurazione Supabase mancante' });
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
     }
-    
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    const { userId, aiCharacter } = req.body;
+
+    const supabase = createClient(
+        process.env.SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_KEY
+    );
+
+    const openai = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+    });
 
     try {
-        // 1. Recupera informazioni importanti
-        const { data: importantInfo, error: infoError } = await supabase
-            .from('important_info')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-        if (infoError) {
-            console.error('Errore recupero important_info:', infoError);
-        }
-
-        // 2. Recupera riassunti recenti delle conversazioni (ultimi 7 giorni)
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-        const { data: recentSummaries, error: summariesError } = await supabase
+        // Recupera riassunti conversazioni recenti per questo utente e AI
+        const { data: summaries, error: summariesError } = await supabase
             .from('conversation_summaries')
-            .select('*')
-            .gte('conversation_date', sevenDaysAgo.toISOString())
+            .select('summary, key_points, emotions, topics, conversation_date')
+            .eq('user_id', userId)
+            .eq('ai_character', aiCharacter)
             .order('conversation_date', { ascending: false })
             .limit(10);
 
-        if (summariesError) {
-            console.error('Errore recupero riassunti:', summariesError);
+        if (summariesError) throw summariesError;
+
+        // Recupera informazioni importanti per questo utente
+        const { data: importantInfo, error: infoError } = await supabase
+            .from('important_info')
+            .select('type, info, context')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+        if (infoError) throw infoError;
+
+        // Se non c'è storia, ritorna stringa vuota
+        if ((!summaries || summaries.length === 0) && (!importantInfo || importantInfo.length === 0)) {
+            return res.status(200).json({ summary: "" });
         }
 
-        // 3. Organizza le informazioni importanti per categoria
-        const infoByType = {};
-        if (importantInfo && importantInfo.length > 0) {
-            importantInfo.forEach(info => {
-                const type = info.type || 'altro';
-                if (!infoByType[type]) infoByType[type] = [];
-                infoByType[type].push({
-                    info: info.info,
-                    context: info.context,
-                    confidence: info.confidence
-                });
-            });
-        }
+        // Prepara il prompt per generare il contesto
+        let contextPrompt = `Genera un riassunto conciso delle conversazioni precedenti e informazioni importanti per la prossima conversazione.
 
-        // 4. Crea il riassunto del contesto
-        let contextSummary = "";
+RIASSUNTI CONVERSAZIONI RECENTI:
+`;
 
-        // Aggiungi informazioni importanti
-        if (Object.keys(infoByType).length > 0) {
-            contextSummary += "INFORMAZIONI IMPORTANTI:\n\n";
-            
-            const typeLabels = {
-                'famiglia': '👨‍👩‍👧‍👦 Famiglia',
-                'persona': '👤 Persone importanti',
-                'data': '📅 Date importanti',
-                'luogo': '📍 Luoghi',
-                'preferenza': '❤️ Preferenze',
-                'progetto': '💼 Progetti',
-                'altro': '📌 Altro'
-            };
-
-            for (const [type, infos] of Object.entries(infoByType)) {
-                contextSummary += `${typeLabels[type] || type.toUpperCase()}:\n`;
-                infos.forEach(info => {
-                    contextSummary += `- ${info.info}`;
-                    if (info.context) {
-                        contextSummary += ` (${info.context})`;
-                    }
-                    contextSummary += '\n';
-                });
-                contextSummary += '\n';
+        summaries?.forEach((summary, idx) => {
+            contextPrompt += `\n[Conversazione ${idx + 1} - ${new Date(summary.conversation_date).toLocaleDateString('it-IT')}]`;
+            contextPrompt += `\nRiassunto: ${summary.summary}`;
+            if (summary.key_points?.length > 0) {
+                contextPrompt += `\nPunti chiave: ${summary.key_points.join(', ')}`;
             }
-        }
-
-        // Aggiungi riassunti recenti
-        if (recentSummaries && recentSummaries.length > 0) {
-            contextSummary += "\nCONVERSAZIONI RECENTI:\n\n";
-            
-            recentSummaries.forEach(summary => {
-                const date = new Date(summary.conversation_date);
-                const dateStr = date.toLocaleDateString('it-IT', { 
-                    day: 'numeric', 
-                    month: 'long',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-                
-                contextSummary += `📅 ${dateStr}:\n`;
-                contextSummary += `${summary.summary}\n`;
-                
-                if (summary.key_points && summary.key_points.length > 0) {
-                    contextSummary += `Punti chiave: ${summary.key_points.join(', ')}\n`;
-                }
-                
-                if (summary.sentiment) {
-                    const sentimentEmoji = {
-                        'positivo': '😊',
-                        'negativo': '😔',
-                        'neutro': '😐',
-                        'misto': '🤔'
-                    };
-                    contextSummary += `Mood: ${sentimentEmoji[summary.sentiment] || ''} ${summary.sentiment}\n`;
-                }
-                
-                contextSummary += '\n';
-            });
-        }
-
-        // Se non ci sono informazioni
-        if (!contextSummary) {
-            contextSummary = "Non ho ancora informazioni memorizzate. Questa sarà la nostra prima conversazione!";
-        }
-
-        res.status(200).json({ 
-            summary: contextSummary,
-            totalImportantInfo: importantInfo?.length || 0,
-            recentConversations: recentSummaries?.length || 0
+            if (summary.topics?.length > 0) {
+                contextPrompt += `\nArgomenti: ${summary.topics.join(', ')}`;
+            }
+            contextPrompt += '\n';
         });
+
+        contextPrompt += `\n\nINFORMAZIONI IMPORTANTI SULL'UTENTE:\n`;
+        
+        const groupedInfo = {};
+        importantInfo?.forEach(info => {
+            if (!groupedInfo[info.type]) {
+                groupedInfo[info.type] = [];
+            }
+            groupedInfo[info.type].push(info.info);
+        });
+
+        Object.entries(groupedInfo).forEach(([type, infos]) => {
+            contextPrompt += `\n${type.toUpperCase()}: ${infos.join(', ')}`;
+        });
+
+        contextPrompt += `\n\nCrea un riassunto MOLTO CONCISO (max 200 parole) che catturi:
+1. Chi è l'utente e informazioni personali chiave
+2. Argomenti ricorrenti o interessi
+3. Tono delle conversazioni precedenti
+4. Qualsiasi informazione rilevante per personalizzare la prossima conversazione
+
+Il riassunto deve essere scritto come memoria diretta, non come report.`;
+
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+                {
+                    role: "system",
+                    content: "Sei un assistente che crea riassunti concisi di memoria per conversazioni future. Scrivi in prima persona come se fossi l'AI che ricorda."
+                },
+                {
+                    role: "user",
+                    content: contextPrompt
+                }
+            ],
+            temperature: 0.7,
+            max_tokens: 400
+        });
+
+        const contextSummary = completion.choices[0].message.content.trim();
+
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        return res.status(200).json({ summary: contextSummary });
 
     } catch (error) {
-        console.error('Errore generazione riassunto contesto:', error);
-        res.status(500).json({ 
-            error: 'Errore interno del server',
-            details: error.message 
-        });
+        console.error('Errore generazione contesto:', error);
+        return res.status(500).json({ error: 'Errore interno del server' });
     }
 }

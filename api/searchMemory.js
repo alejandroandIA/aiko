@@ -1,5 +1,6 @@
 // api/searchMemory.js
 import { createClient } from '@supabase/supabase-js';
+import OpenAI from 'openai';
 // import { USER_NAME, AI_NAME } from '../src/config/aiConfig.mjs'; // File non trovato, uso valori diretti
 const USER_NAME = 'Tu';
 const AI_NAME = 'Aiko';
@@ -7,161 +8,143 @@ const AI_NAME = 'Aiko';
 export default async function handler(req, res) {
     if (req.method === 'OPTIONS') {
         res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
         return res.status(200).end();
     }
 
-    if (req.method !== 'GET') {
-        res.setHeader('Allow', ['GET', 'OPTIONS']);
-        return res.status(405).end(`Method ${req.method} Not Allowed`);
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    const { query } = req.query;
-    
-    if (!query || query.trim() === '') {
-        return res.status(400).json({ error: 'Query di ricerca mancante' });
+    const { searchTerms, userId, aiCharacter } = req.body;
+
+    if (!searchTerms || !userId) {
+        return res.status(400).json({ error: 'Parametri mancanti' });
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
-    
-    if (!supabaseUrl || !supabaseServiceKey) {
-        return res.status(500).json({ error: 'Configurazione Supabase mancante' });
-    }
-    
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = createClient(
+        process.env.SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_KEY
+    );
+
+    const openai = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+    });
 
     try {
-        console.log(`Ricerca memoria per: "${query}"`);
-        
-        // Prepara termini di ricerca in italiano
-        const searchTerms = query.toLowerCase().trim();
-        const searchPattern = `%${searchTerms}%`;
-        
-        // 1. Cerca nelle informazioni importanti (priorità alta)
-        const { data: importantResults, error: importantError } = await supabase
+        console.log(`Ricerca memoria per utente ${userId}: "${searchTerms}"`);
+
+        // 1. Ricerca nelle informazioni importanti dell'utente
+        const { data: importantInfo, error: infoError } = await supabase
             .from('important_info')
             .select('*')
-            .or(`info.ilike.${searchPattern},context.ilike.${searchPattern}`)
-            .order('created_at', { ascending: false })
+            .eq('user_id', userId)
+            .textSearch('info', searchTerms, { type: 'websearch', config: 'italian' })
             .limit(10);
 
-        if (importantError) {
-            console.error('Errore ricerca important_info:', importantError);
-        }
+        if (infoError) console.error('Errore ricerca important_info:', infoError);
 
-        // 2. Cerca nei riassunti delle conversazioni
-        const { data: summaryResults, error: summaryError } = await supabase
+        // 2. Ricerca nei riassunti delle conversazioni
+        const { data: summaries, error: summariesError } = await supabase
             .from('conversation_summaries')
             .select('*')
-            .or(`summary.ilike.${searchPattern},topics.cs.{${searchTerms}}`)
+            .eq('user_id', userId)
+            .eq('ai_character', aiCharacter)
+            .or(`summary.ilike.%${searchTerms}%,key_points.cs.{${searchTerms}}`)
             .order('conversation_date', { ascending: false })
-            .limit(10);
+            .limit(5);
 
-        if (summaryError) {
-            console.error('Errore ricerca conversation_summaries:', summaryError);
-        }
+        if (summariesError) console.error('Errore ricerca summaries:', summariesError);
 
-        // 3. Cerca con text search nei riassunti (fallback)
-        let textSearchResults = [];
-        if ((!importantResults || importantResults.length === 0) && 
-            (!summaryResults || summaryResults.length === 0)) {
-            
-            const words = searchTerms.split(' ').filter(w => w.length > 2);
-            const tsQuery = words.join(' & ');
-            
-            const { data: tsResults, error: tsError } = await supabase
-                .from('conversation_summaries')
-                .select('*')
-                .textSearch('summary', tsQuery, { 
-                    type: 'websearch',
-                    config: 'italian' 
-                })
-                .order('conversation_date', { ascending: false })
-                .limit(5);
+        // 3. Ricerca con embedding se non ci sono risultati diretti
+        let embeddingResults = [];
+        if ((!importantInfo || importantInfo.length === 0) && (!summaries || summaries.length === 0)) {
+            try {
+                // Genera embedding per la query
+                const embeddingResponse = await openai.embeddings.create({
+                    model: "text-embedding-3-small",
+                    input: searchTerms,
+                });
                 
-            if (!tsError && tsResults) {
-                textSearchResults = tsResults;
+                const queryEmbedding = embeddingResponse.data[0].embedding;
+                
+                // Cerca per similarità nei riassunti
+                const { data: semanticResults } = await supabase.rpc(
+                    'search_conversation_summaries_by_embedding',
+                    {
+                        query_embedding: queryEmbedding,
+                        match_threshold: 0.7,
+                        match_count: 5,
+                        p_user_id: userId,
+                        p_ai_character: aiCharacter
+                    }
+                );
+                
+                embeddingResults = semanticResults || [];
+            } catch (embError) {
+                console.error('Errore ricerca embedding:', embError);
             }
         }
 
-        // Combina e formatta i risultati
-        let formattedResults = [];
-        
+        // 4. Combina e formatta i risultati
+        const results = [];
+
         // Aggiungi informazioni importanti
-        if (importantResults && importantResults.length > 0) {
-            importantResults.forEach(item => {
-                const date = new Date(item.created_at);
-                formattedResults.push({
+        if (importantInfo && importantInfo.length > 0) {
+            importantInfo.forEach(info => {
+                results.push({
                     type: 'important_info',
-                    content: `[Info ${item.type}] ${item.info}${item.context ? ` (${item.context})` : ''}`,
-                    date: date.toLocaleDateString('it-IT'),
-                    relevance: 'alta'
+                    content: info.info,
+                    context: info.context,
+                    category: info.type,
+                    confidence: info.confidence,
+                    date: info.created_at
                 });
             });
         }
-        
+
         // Aggiungi riassunti conversazioni
-        const allSummaries = [...summaryResults || [], ...textSearchResults];
-        const uniqueSummaries = Array.from(new Map(allSummaries.map(s => [s.id, s])).values());
-        
-        uniqueSummaries.forEach(summary => {
-            const date = new Date(summary.conversation_date);
-            let content = `[Conversazione del ${date.toLocaleDateString('it-IT')}] ${summary.summary}`;
-            
-            if (summary.key_points && summary.key_points.length > 0) {
-                const relevantPoints = summary.key_points.filter(point => 
-                    point.toLowerCase().includes(searchTerms)
-                );
-                if (relevantPoints.length > 0) {
-                    content += ` | Punti rilevanti: ${relevantPoints.join(', ')}`;
-                }
-            }
-            
-            formattedResults.push({
-                type: 'conversation_summary',
-                content,
-                date: date.toLocaleDateString('it-IT'),
-                relevance: 'media'
+        if (summaries && summaries.length > 0) {
+            summaries.forEach(summary => {
+                results.push({
+                    type: 'conversation',
+                    content: summary.summary,
+                    key_points: summary.key_points,
+                    topics: summary.topics,
+                    date: summary.conversation_date,
+                    sentiment: summary.sentiment
+                });
+            });
+        }
+
+        // Aggiungi risultati embedding
+        embeddingResults.forEach(result => {
+            results.push({
+                type: 'semantic_match',
+                content: result.summary,
+                similarity: result.similarity,
+                date: result.conversation_date
             });
         });
 
-        // Ordina per rilevanza e data
-        formattedResults.sort((a, b) => {
-            if (a.relevance !== b.relevance) {
-                return a.relevance === 'alta' ? -1 : 1;
-            }
-            return new Date(b.date) - new Date(a.date);
-        });
-
-        // Limita i risultati
-        formattedResults = formattedResults.slice(0, 15);
-
-        // Prepara la risposta
-        let resultText = "";
-        if (formattedResults.length === 0) {
-            resultText = `Non ho trovato nulla nei miei ricordi riguardo "${query}".`;
-        } else {
-            resultText = formattedResults
-                .map(r => r.content)
-                .join('\n\n');
+        // Se non ci sono risultati
+        if (results.length === 0) {
+            results.push({
+                type: 'no_results',
+                content: 'Non ho trovato ricordi specifici su questo argomento.'
+            });
         }
-
-        console.log(`Trovati ${formattedResults.length} risultati per "${query}"`);
 
         res.setHeader('Access-Control-Allow-Origin', '*');
         return res.status(200).json({ 
-            results: resultText,
-            count: formattedResults.length,
-            query: query
+            results,
+            query: searchTerms,
+            totalResults: results.length
         });
 
     } catch (error) {
-        console.error('Errore searchMemory:', error);
-        res.status(500).json({ 
-            error: 'Errore nella ricerca',
-            details: error.message 
-        });
+        console.error('Errore ricerca memoria:', error);
+        return res.status(500).json({ error: 'Errore interno del server' });
     }
 }

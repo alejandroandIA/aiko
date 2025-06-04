@@ -1,3 +1,5 @@
+import OpenAI from 'openai';
+
 export default async function handler(req, res) {
     if (req.method === 'OPTIONS') {
         res.setHeader('Access-Control-Allow-Origin', '*');
@@ -10,122 +12,65 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-    if (!OPENAI_API_KEY) {
-        return res.status(500).json({ error: 'OPENAI_API_KEY non configurata' });
+    const { conversation, userId } = req.body;
+
+    if (!conversation || !userId) {
+        return res.status(400).json({ error: 'Dati mancanti' });
     }
+
+    const openai = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+    });
 
     try {
-        const { conversation } = req.body;
-        
-        if (!conversation || !Array.isArray(conversation)) {
-            return res.status(400).json({ error: 'Conversazione non valida' });
-        }
+        // Formatta la conversazione
+        const conversationText = conversation.map(msg => 
+            `${msg.speaker}: ${msg.content}`
+        ).join('\n');
 
-        // Prepara il testo della conversazione
-        const conversationText = conversation
-            .map(entry => `${entry.speaker}: ${entry.content}`)
-            .join('\n');
-
-        // Chiedi a GPT di estrarre informazioni importanti
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${OPENAI_API_KEY}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: 'gpt-4o',
-                messages: [
-                    {
-                        role: 'system',
-                        content: `Sei un assistente che estrae informazioni importanti e personali dalle conversazioni.
-                        
-ESTRAI SOLO informazioni FATTUALI e PERSONALI come:
-- Nomi di persone (familiari, amici, colleghi)
-- Relazioni familiari specifiche
-- Date importanti (compleanni, anniversari)
-- Luoghi significativi
-- Preferenze personali dichiarate esplicitamente
-- Progetti o attività in corso
-- Informazioni di contatto o identificative
-
-NON estrarre:
-- Saluti generici
-- Commenti vaghi
-- Domande senza risposta
-- Speculazioni o ipotesi
-
-IMPORTANTE: Restituisci SOLO un oggetto JSON valido, senza backtick markdown o altro testo.
-
-Formato output JSON (senza backtick):
-{
-  "important_facts": [
-    {
-      "type": "famiglia|persona|data|luogo|preferenza|progetto|altro",
-      "info": "descrizione breve e chiara",
-      "context": "contesto minimo per capire",
-      "confidence": "alta|media|bassa"
-    }
-  ],
-  "summary": "riassunto brevissimo delle info più rilevanti"
-}`
-                    },
-                    {
-                        role: 'user',
-                        content: conversationText
-                    }
-                ],
-                temperature: 0.3,
-                max_tokens: 1000
-            })
+        // Estrai informazioni importanti con GPT-4
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+                {
+                    role: "system",
+                    content: `Estrai informazioni importanti dall'utente in questa conversazione.
+                    Cerca:
+                    - Nomi di familiari o persone importanti (tipo: "famiglia" o "persona")
+                    - Date importanti, compleanni, anniversari (tipo: "data")
+                    - Luoghi di residenza, lavoro, preferiti (tipo: "luogo")  
+                    - Preferenze, hobby, interessi (tipo: "preferenza")
+                    - Progetti, obiettivi, piani (tipo: "progetto")
+                    - Altre info personali rilevanti (tipo: "altro")
+                    
+                    Ogni informazione deve avere:
+                    - type: uno dei tipi sopra
+                    - info: l'informazione estratta (concisa)
+                    - context: contesto breve
+                    - confidence: "alta", "media", o "bassa"
+                    
+                    IMPORTANTE: Estrai SOLO informazioni dette dall'UTENTE, non dall'AI.
+                    Rispondi SOLO in formato JSON con array "importantInfo".`
+                },
+                {
+                    role: "user",
+                    content: conversationText
+                }
+            ],
+            temperature: 0.3,
+            response_format: { type: "json_object" }
         });
 
-        if (!response.ok) {
-            const error = await response.json();
-            console.error('Errore OpenAI:', error);
-            return res.status(500).json({ error: 'Errore estrazione informazioni' });
-        }
+        const result = JSON.parse(completion.choices[0].message.content);
 
-        const data = await response.json();
-        let extractedInfo = { important_facts: [], summary: "" }; // Valore di default
-
-        if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
-            try {
-                let content = data.choices[0].message.content;
-                
-                // Rimuovi i backtick markdown se presenti
-                content = content.trim();
-                if (content.startsWith('```json')) {
-                    content = content.substring(7); // Rimuovi ```json
-                }
-                if (content.startsWith('```')) {
-                    content = content.substring(3); // Rimuovi ```
-                }
-                if (content.endsWith('```')) {
-                    content = content.substring(0, content.length - 3); // Rimuovi ``` alla fine
-                }
-                content = content.trim();
-                
-                extractedInfo = JSON.parse(content);
-            } catch (parseError) {
-                console.error('Errore parsing JSON dalla risposta di OpenAI in extractImportantInfo:', parseError);
-                console.error('Contenuto ricevuto da OpenAI che ha causato errore di parsing:', data.choices[0].message.content);
-                // Non restituire un errore 500 qui, ma piuttosto un set di risultati vuoto o parziale se possibile.
-                // In questo caso, restituiremo il valore di default (vuoto).
-                // Potresti anche decidere di inviare una notifica o loggare questo evento in modo più specifico.
-            }
-        } else {
-            console.warn('Risposta da OpenAI non conteneva il percorso atteso per il contenuto del messaggio in extractImportantInfo.', data);
-        }
-
-        return res.status(200).json(extractedInfo);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        return res.status(200).json({
+            importantInfo: result.importantInfo || [],
+            extractedAt: new Date().toISOString()
+        });
 
     } catch (error) {
-        console.error('Errore in extractImportantInfo:', error);
-        return res.status(500).json({ 
-            error: 'Errore interno del server',
-            details: error.message 
-        });
+        console.error('Errore estrazione info:', error);
+        return res.status(500).json({ error: 'Errore interno del server' });
     }
 } 
