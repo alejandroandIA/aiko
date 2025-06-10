@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>CI SONO IO - Conversazioni Autentiche con AI</title>
+    <!-- File principale dell'interfaccia utente di CI SONO IO
+         Struttura:
+         1. Sezione Login - dove gli utenti inseriscono nome e cognome
+         2. Selezione AI - griglia con 6 personaggi AI tra cui scegliere
+         3. Sezioni Info/Contatti - pagine informative
+         4. Schermata Conversazione - interfaccia di chat con animazione faccia AI
+         L'app è una Single Page Application (SPA) che mostra/nasconde sezioni dinamicamente -->
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,9 +18,9 @@
 </head>
 <body>
     <div class="app-container">
-        <div class="matrix-background" id="matrixCanvas"></div>
+        <div class="matrix-background" id="matrixCanvas"></div> <!-- Animazione Matrix di sfondo -->
         
-        <!-- Header con navigazione -->
+        <!-- Header con navigazione - visibile solo nelle sezioni non-conversazione -->
         <header class="main-header">
             <div class="header-content">
                 <h1 class="site-title">CI SONO IO</h1>
@@ -25,7 +32,7 @@
             </div>
         </header>
 
-        <!-- Sezione Login/Home -->
+        <!-- Sezione Login/Home - prima schermata che l'utente vede -->
         <main id="home" class="section active">
             <div class="login-container" id="loginContainer">
                 <h2 class="section-title">Benvenuto in CI SONO IO</h2>
@@ -42,7 +49,7 @@
                 </form>
             </div>
 
-            <!-- Selezione AI (nascosta inizialmente) -->
+            <!-- Selezione AI - mostrata dopo login, presenta i 6 personaggi AI -->
             <div class="ai-selection-container" id="aiSelectionContainer" style="display: none;">
                 <div class="user-info">
                     <span id="userDisplay"></span>
@@ -99,7 +106,7 @@
             </div>
         </main>
 
-        <!-- Sezione Informazioni -->
+        <!-- Sezione Informazioni - spiega lo scopo dell'app e come funziona -->
         <section id="informazioni" class="section" style="display: none;">
             <div class="content-container">
                 <h2 class="section-title">Informazioni</h2>
@@ -127,7 +134,7 @@
             </div>
         </section>
 
-        <!-- Sezione Contatti -->
+        <!-- Sezione Contatti - info di contatto del creatore -->
         <section id="contatti" class="section" style="display: none;">
             <div class="content-container">
                 <h2 class="section-title">Contatti</h2>
@@ -150,7 +157,8 @@
             </div>
         </section>
 
-        <!-- Schermata conversazione (nascosta inizialmente) -->
+        <!-- Schermata conversazione - interfaccia principale per parlare con l'AI
+             Include: timer, animazione faccia AI, controlli parla/chiudi -->
         <div id="conversationScreen" class="conversation-screen" style="display: none;">
             <div class="conversation-header">
                 <button class="btn-back" onclick="backToSelection()">← Torna alla selezione</button>
@@ -182,9 +190,10 @@
             <div id="status" class="status-minimal"></div>
         </div>
 
+        <!-- Audio player nascosto per riprodurre le risposte vocali dell'AI -->
         <audio id="aiAudioPlayer" autoplay style="display: none;"></audio>
     </div>
     
-    <script src="script.js" defer></script>
+    <script src="script.js" defer></script> <!-- Script principale che gestisce tutta la logica -->
 </body>
 </html>

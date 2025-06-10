@@ -1,4 +1,12 @@
 // api/session.js
+// Questo file gestisce la creazione di sessioni temporanee con OpenAI Realtime API.
+// Quando un utente inizia una conversazione con un personaggio AI:
+// 1. Riceve userId, aiCharacter e model dal frontend
+// 2. Usa la chiave API di OpenAI (protetta su Vercel) per creare una sessione
+// 3. Ottiene un token effimero (client_secret) che il frontend userà per la connessione WebRTC
+// 4. Il token ha una scadenza limitata per sicurezza
+// Questo approccio mantiene la chiave API sicura sul server mentre permette connessioni dirette dal browser
+
 export default async function handler(req, res) {
     if (req.method === 'OPTIONS') {
         res.setHeader('Access-Control-Allow-Origin', '*');

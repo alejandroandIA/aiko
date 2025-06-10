@@ -1,4 +1,9 @@
 // api/searchMemory.js
+// Questo file gestisce la ricerca nella memoria dell'IA (Aiko).
+// Cerca informazioni in due tabelle Supabase: 'important_info' e 'conversation_summaries'.
+// Se la ricerca testuale non produce risultati, utilizza gli embedding di OpenAI 
+// per trovare corrispondenze semantiche nei riassunti delle conversazioni.
+// Combina e restituisce tutti i risultati trovati.
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 // import { USER_NAME, AI_NAME } from '../src/config/aiConfig.mjs'; // File non trovato, uso valori diretti
@@ -63,7 +68,7 @@ export default async function handler(req, res) {
             try {
                 // Genera embedding per la query
                 const embeddingResponse = await openai.embeddings.create({
-                    model: "text-embedding-3-small",
+                    model: "text-embedding-ada-002",
                     input: searchTerms,
                 });
                 

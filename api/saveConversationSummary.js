@@ -1,3 +1,18 @@
+// api/saveConversationSummary.js
+// Questo file gestisce il salvataggio dei riassunti delle conversazioni al termine di ogni chat.
+// Processo:
+// 1. Riceve la conversazione completa, userId e aiCharacter dal frontend
+// 2. Usa GPT-4 per analizzare la conversazione ed estrarre:
+//    - Riassunto conciso (max 150 parole)
+//    - Punti chiave discussi
+//    - Emozioni prevalenti
+//    - Topics/argomenti
+//    - Persone/luoghi/eventi menzionati
+//    - Sentiment generale
+// 3. Salva il riassunto nella tabella 'conversation_summaries' di Supabase
+// 4. Pulisce le conversazioni temporanee più vecchie di 48 ore
+// Questo permette all'AI di ricordare le conversazioni passate senza salvare tutto il testo
+
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 

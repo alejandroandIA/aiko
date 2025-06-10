@@ -1,4 +1,12 @@
 // CI SONO IO - Sistema di conversazione AI con personalità multiple
+// Questo è il file principale del frontend che gestisce:
+// - Login utenti e autenticazione
+// - Selezione dei personaggi AI (Aiko, Francesca, Amapolla, Alfred, Giovanni, Alessio)
+// - Conversazioni in tempo reale tramite WebRTC con OpenAI Realtime API
+// - Gestione del tempo di utilizzo (10 min premium + 10 min standard al giorno)
+// - Animazioni della faccia AI e interfaccia utente
+// - Salvataggio automatico delle conversazioni e estrazione informazioni importanti
+
 const loginForm = document.getElementById('loginForm');
 const loginContainer = document.getElementById('loginContainer');
 const aiSelectionContainer = document.getElementById('aiSelectionContainer');
@@ -142,7 +150,7 @@ IMPORTANTE:
     },
     alfred: {
         name: "Alfred",
-        voice: "alloy",
+        voice: "onyx",
         accent: "romano marcato",
         color: "#e74c3c",
         instructions: `Sei Alfred, un romano verace di 35 anni. SEI UN UOMO VERO IN CARNE E OSSA!
@@ -1271,13 +1279,16 @@ function addToConversation(speaker, content) {
     console.log(`[${speaker}]: ${content}`);
 }
 
-// End conversation
+// End conversation - MODIFICATO per fermare il timer
 async function endConversation() {
     console.log("Chiusura conversazione...");
     
     talkButton.disabled = false;
     endButton.disabled = true;
     isActive = false;
+    
+    // FERMA IL TIMER quando si chiude la conversazione
+    stopTimer();
     
     // Stop animations
     faceAnimation.stopSpeaking();

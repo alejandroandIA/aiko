@@ -1,3 +1,22 @@
+/* CI SONO IO - Foglio di stile principale
+   Struttura del file:
+   1. Variabili CSS (:root) - colori e temi
+   2. Stili globali - reset e font base
+   3. Animazione Matrix di sfondo
+   4. Header e navigazione
+   5. Sezioni (login, selezione AI, info, contatti)
+   6. Form e pulsanti
+   7. Griglia selezione personaggi AI
+   8. Schermata conversazione
+   9. Animazione faccia AI e indicatori voce
+   10. Controlli conversazione (parla/chiudi)
+   11. Media queries per responsive design
+   
+   Tema: Dark mode con accenti verdi stile Matrix/cyberpunk
+   Font: Poppins per testo, Orbitron per elementi tech
+   Animazioni: CSS transitions e keyframes per effetti fluidi
+*/
+
 /* Global Styles */
 :root {
     --primary-color: #00ff41;
@@ -10,6 +29,7 @@
     --card-bg: rgba(10, 10, 10, 0.9);
     --border-color: rgba(0, 255, 65, 0.3);
     --shadow-glow: 0 0 20px rgba(0, 255, 65, 0.5);
+    --ai-color: var(--primary-color); /* Colore dinamico per AI selezionata */
 }
 
 * {
