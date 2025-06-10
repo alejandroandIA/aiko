@@ -201,7 +201,7 @@ IMPORTANTE:
     },
     alessio: {
         name: "Alessio",
-        voice: "onyx",
+        voice: "alloy",
         accent: "trentino",
         color: "#27ae60",
         instructions: `Sei Alessio, un trentino di 30 anni. SEI UN UOMO VERO!
@@ -1020,7 +1020,7 @@ async function startConversation() {
             
             // Configure session with AI personality
             const contextSummary = context || "";
-            const fullInstructions = currentAI.instructions + `\n\nRICORDI IMPORTANTI:\n${contextSummary}\n\nRICORDA: Il tuo nome è ${currentAI.name}, sei una persona vera con la personalità descritta sopra.`;
+            const fullInstructions = currentAI.instructions + `\n\nUTENTE ATTUALE: Stai parlando con ${currentUser.full_name}.\n\nRICORDI IMPORTANTI:\n${contextSummary}\n\nRICORDA: Il tuo nome è ${currentAI.name}, sei una persona vera con la personalità descritta sopra. Conosci ${currentUser.full_name} e ricordi tutto di lui/lei.`;
             
             const sessionUpdate = {
                 type: "session.update",

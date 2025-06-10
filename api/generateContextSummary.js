@@ -1,4 +1,12 @@
 // api/generateContextSummary.js
+// Questo file genera un riassunto del contesto per ogni nuova conversazione.
+// Il sistema di memoria funziona così:
+// 1. Recupera gli ultimi 10 riassunti di conversazioni precedenti tra l'utente e l'AI specifica
+// 2. Recupera le ultime 20 informazioni importanti sull'utente (famiglia, preferenze, etc.)
+// 3. Usa GPT-4 per creare un riassunto conciso (max 200 parole) che l'AI userà come memoria
+// 4. Il riassunto include: chi è l'utente, argomenti ricorrenti, tono delle conversazioni
+// Questo permette all'AI di "ricordare" l'utente e personalizzare ogni conversazione
+
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 

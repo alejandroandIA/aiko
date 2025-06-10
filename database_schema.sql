@@ -187,7 +187,7 @@ CREATE TABLE IF NOT EXISTS user_time_tracking (
 CREATE TABLE IF NOT EXISTS conversation_sessions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  ai_character TEXT NOT NULL CHECK (ai_character IN ('aiko', 'francesca', 'ampolla', 'alfred', 'giovanni', 'alessio')),
+  ai_character TEXT NOT NULL CHECK (ai_character IN ('aiko', 'francesca', 'amapolla', 'alfred', 'giovanni', 'alessio')),
   session_start TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   session_end TIMESTAMP WITH TIME ZONE,
   model_used TEXT CHECK (model_used IN ('gpt-4o-realtime-preview-2024-12-17', 'gpt-4o-mini-realtime-preview-2024-12-17')),
@@ -199,7 +199,7 @@ CREATE TABLE IF NOT EXISTS conversation_sessions (
 CREATE TABLE IF NOT EXISTS conversation_summaries (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  ai_character TEXT NOT NULL CHECK (ai_character IN ('aiko', 'francesca', 'ampolla', 'alfred', 'giovanni', 'alessio')),
+  ai_character TEXT NOT NULL CHECK (ai_character IN ('aiko', 'francesca', 'amapolla', 'alfred', 'giovanni', 'alessio')),
   summary TEXT NOT NULL,
   key_points TEXT[],
   emotions TEXT[],
@@ -215,7 +215,7 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
 CREATE TABLE IF NOT EXISTS memoria_chat (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  ai_character TEXT NOT NULL CHECK (ai_character IN ('aiko', 'francesca', 'ampolla', 'alfred', 'giovanni', 'alessio')),
+  ai_character TEXT NOT NULL CHECK (ai_character IN ('aiko', 'francesca', 'amapolla', 'alfred', 'giovanni', 'alessio')),
   speaker TEXT NOT NULL,
   content TEXT NOT NULL,
   item_id TEXT,
@@ -264,7 +264,7 @@ CREATE TABLE IF NOT EXISTS ai_characters (
 INSERT INTO ai_characters (id, name, voice, accent, personality, gender) VALUES
   ('aiko', 'Aiko', 'shimmer', 'romano', 'Vivace, spontanea, ricorda tutto, adora chiacchierare', 'female'),
   ('francesca', 'Francesca', 'ballad', 'siciliano', 'Ultra eccitata, pazza, ultra divertente, ride tanto con voce squillante', 'female'),
-  ('ampolla', 'Ampolla', 'coral', 'bresciano', 'Super seria, saggia, fonte di saggezza', 'female'),
+  ('amapolla', 'Amapolla', 'coral', 'bresciano', 'Super seria, saggia, fonte di saggezza', 'female'),
   ('alfred', 'Alfred', 'echo', 'romano marcato', 'Ultra sarcastico, ultra ironico, divertente, ride tanto', 'male'),
   ('giovanni', 'Giovanni', 'echo', 'napoletano', 'Ultra ironico, arrogante, presuntuoso, voce fina e acuta', 'male'),
   ('alessio', 'Alessio', 'alloy', 'trentino', 'Assistente standard, gentile e disponibile', 'male')

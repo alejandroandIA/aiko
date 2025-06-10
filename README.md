@@ -4,7 +4,7 @@ Una piattaforma innovativa per conversazioni vocali naturali con intelligenze ar
 
 ## 🎯 Caratteristiche
 
-- **6 AI con personalità uniche**: 3 femminili (Aiko, Francesca, Ampolla) e 3 maschili (Alfred, Giovanni, Alessio)
+- **6 AI con personalità uniche**: 3 femminili (Aiko, Francesca, Amapolla) e 3 maschili (Alfred, Giovanni, Alessio)
 - **Memoria personalizzata**: Ogni AI ricorda le conversazioni precedenti con ogni utente
 - **Sistema di tempo giornaliero**: 10 minuti premium + 10 minuti standard al giorno
 - **Login semplice**: Solo nome e cognome per accedere
@@ -16,7 +16,7 @@ Una piattaforma innovativa per conversazioni vocali naturali con intelligenze ar
 ### AI Femminili
 - **Aiko**: Vivace romana di 25 anni, spontanea e affettuosa
 - **Francesca**: Siciliana ultra eccitata, divertentissima e squillante
-- **Ampolla**: Bresciana saggia e riflessiva, fonte di saggezza
+- **Amapolla**: Bresciana saggia e riflessiva, fonte di saggezza
 
 ### AI Maschili
 - **Alfred**: Romano sarcastico e ironico, prende in giro con affetto
