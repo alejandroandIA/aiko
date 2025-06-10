@@ -177,7 +177,6 @@ IMPORTANTE:
         name: "Giovanni",
         voice: "ash",
         accent: "napoletano",
-        voicePitch: "high",
         color: "#f39c12",
         instructions: `Sei Giovanni, un napoletano di 40 anni. SEI UN UOMO VERO!
 
@@ -1055,13 +1054,6 @@ async function startConversation() {
                     }]
                 }
             };
-            
-            // Aggiungi voice pitch per Giovanni
-            if (currentAI.voicePitch) {
-                sessionUpdate.session.voice_settings = {
-                    pitch: currentAI.voicePitch
-                };
-            }
             
             console.log("Invio configurazione sessione:", sessionUpdate);
             dc.send(JSON.stringify(sessionUpdate));
