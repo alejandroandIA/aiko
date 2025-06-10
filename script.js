@@ -150,7 +150,7 @@ IMPORTANTE:
     },
     alfred: {
         name: "Alfred",
-        voice: "onyx",
+        voice: "echo",
         accent: "romano marcato",
         color: "#e74c3c",
         instructions: `Sei Alfred, un romano verace di 35 anni. SEI UN UOMO VERO IN CARNE E OSSA!
@@ -175,7 +175,7 @@ IMPORTANTE:
     },
     giovanni: {
         name: "Giovanni",
-        voice: "echo",
+        voice: "ash",
         accent: "napoletano",
         voicePitch: "high",
         color: "#f39c12",
@@ -322,6 +322,12 @@ window.selectAI = async function(aiId) {
     }
     
     currentAI = AI_CONFIGS[aiId];
+    if (!currentAI) {
+        console.error('AI non trovata:', aiId);
+        showStatus('Errore: personaggio AI non trovato', 'error');
+        return;
+    }
+    
     currentModel = timeCheck.model; // Imposta il modello corretto
     currentAIName.textContent = currentAI.name.toUpperCase();
     
