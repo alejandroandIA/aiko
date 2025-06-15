@@ -215,17 +215,20 @@ CREATE OR REPLACE VIEW ai_characters_by_section AS
 SELECT 
     section,
     COUNT(*) as character_count,
-    array_agg(json_build_object(
+    json_agg(json_build_object(
         'id', id,
         'name', name,
         'age', age,
         'avatar', avatar,
         'short_description', short_description,
-        'color', color
+        'color', color,
+        'voice', voice,
+        'gender', gender
     ) ORDER BY name) as characters
 FROM ai_characters
 WHERE active = true
-GROUP BY section;
+GROUP BY section
+ORDER BY section;
 
 -- Aggiorna il CHECK constraint per le tabelle che referenziano ai_character
 ALTER TABLE memoria_chat 
