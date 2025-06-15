@@ -51,4 +51,12 @@ coverage/
 .nyc_output/
 
 # Debug
-.vscode/launch.json 
+.vscode/launch.json
+
+# Backup files
+*-old.html
+*-old.css
+*-old.js
+index-old.html
+style-old.css
+script-old.js 
