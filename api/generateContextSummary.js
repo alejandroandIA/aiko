@@ -10,16 +10,23 @@
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 
+// Funzione per impostare gli header CORS
+const setCorsHeaders = (res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+};
+
 export default async function handler(req, res) {
+    setCorsHeaders(res);
+
     if (req.method === 'OPTIONS') {
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
         return res.status(200).end();
     }
 
     if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
+        res.setHeader('Allow', ['POST', 'OPTIONS']);
+        return res.status(405).end(`Method ${req.method} Not Allowed`);
     }
 
     const { userId, aiCharacter } = req.body;
@@ -118,7 +125,6 @@ Il riassunto deve essere scritto come memoria diretta, non come report.`;
 
         const contextSummary = completion.choices[0].message.content.trim();
 
-        res.setHeader('Access-Control-Allow-Origin', '*');
         return res.status(200).json({ summary: contextSummary });
 
     } catch (error) {

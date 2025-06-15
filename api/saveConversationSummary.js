@@ -16,6 +16,13 @@
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 
+// Funzione per impostare gli header CORS
+const setCorsHeaders = (res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+};
+
 // Funzione per generare riassunto con OpenAI
 async function generateSummary(conversation) {
     const openaiApiKey = process.env.OPENAI_API_KEY;
@@ -90,15 +97,15 @@ function analyzeSentiment(conversation) {
 }
 
 export default async function handler(req, res) {
+    setCorsHeaders(res);
+
     if (req.method === 'OPTIONS') {
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
         return res.status(200).end();
     }
 
     if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
+        res.setHeader('Allow', ['POST', 'OPTIONS']);
+        return res.status(405).end(`Method ${req.method} Not Allowed`);
     }
 
     const { conversation, userId, aiCharacter } = req.body;
@@ -177,7 +184,6 @@ export default async function handler(req, res) {
             .eq('user_id', userId)
             .lt('created_at', new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString());
 
-        res.setHeader('Access-Control-Allow-Origin', '*');
         return res.status(200).json({ 
             success: true, 
             summaryId: data.id,
