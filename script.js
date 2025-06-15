@@ -1,4 +1,6 @@
 // CI SONO IO - Script principale con sezioni tematiche e personaggi espansi
+// MODALITÀ OFFLINE - Non usa database Supabase
+// La IA riceve il nome utente ma non salva conversazioni
 
 // Import delle configurazioni
 import { AI_SECTIONS, AI_CHARACTERS } from './src/config/ai-characters.js';
@@ -42,15 +44,16 @@ const STANDARD_MODEL = "gpt-4o-mini-realtime-preview-2024-12-17";
 const REALTIME_API_URL = "https://api.openai.com/v1/realtime";
 
 // API Endpoints
-const SESSION_API_ENDPOINT = "/api/session";
-const LOGIN_API_ENDPOINT = "/api/login";
-const CHECK_TIME_API_ENDPOINT = "/api/checkUserTime";
-const UPDATE_TIME_API_ENDPOINT = "/api/updateUserTime";
-const SAVE_SUMMARY_API_ENDPOINT = "/api/saveConversationSummary";
-const SEARCH_MEMORY_API_ENDPOINT = "/api/searchMemory";
-const SUMMARY_API_ENDPOINT = "/api/generateContextSummary";
-const EXTRACT_INFO_API_ENDPOINT = "/api/extractImportantInfo";
-const SAVE_IMPORTANT_INFO_API_ENDPOINT = "/api/saveImportantInfo";
+const SESSION_API_ENDPOINT = "/api/session"; // Ancora necessario per OpenAI
+// MODALITÀ OFFLINE - API database non necessarie
+// const LOGIN_API_ENDPOINT = "/api/login";
+// const CHECK_TIME_API_ENDPOINT = "/api/checkUserTime";
+// const UPDATE_TIME_API_ENDPOINT = "/api/updateUserTime";
+// const SAVE_SUMMARY_API_ENDPOINT = "/api/saveConversationSummary";
+// const SEARCH_MEMORY_API_ENDPOINT = "/api/searchMemory";
+// const SUMMARY_API_ENDPOINT = "/api/generateContextSummary";
+// const EXTRACT_INFO_API_ENDPOINT = "/api/extractImportantInfo";
+// const SAVE_IMPORTANT_INFO_API_ENDPOINT = "/api/saveImportantInfo";
 
 // State
 let currentUser = null;
@@ -224,31 +227,31 @@ async function handleLogin(e) {
         return;
     }
     
-    try {
-        const response = await fetch(LOGIN_API_ENDPOINT, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ nome, cognome })
-        });
-        
-        if (!response.ok) throw new Error('Errore login');
-        
-        const data = await response.json();
-        currentUser = data.user;
-        userTimeInfo = data.timeInfo;
-        
-        // Mostra nome utente
-        userDisplay.textContent = `Ciao ${currentUser.full_name}!`;
-        
-        // Vai alla sezione esplora
-        showSection('esplora');
-        navLinks.forEach(l => l.classList.remove('active'));
-        document.querySelector('.nav-link[href="#esplora"]').classList.add('active');
-        
-    } catch (error) {
-        console.error('Errore login:', error);
-        showStatus('Errore durante il login. Riprova.', 'error');
-    }
+    // MODALITÀ OFFLINE - Non usa database
+    currentUser = {
+        id: 'offline-user',
+        nome: nome,
+        cognome: cognome,
+        full_name: `${nome} ${cognome}`
+    };
+    
+    // Timer fisso di 20 minuti per modalità offline
+    userTimeInfo = {
+        premium_minutes_remaining: 10,
+        standard_minutes_remaining: 10,
+        can_use_premium: true,
+        can_use_standard: true
+    };
+    
+    // Mostra nome utente
+    userDisplay.textContent = `Ciao ${currentUser.full_name}!`;
+    
+    // Vai alla sezione esplora
+    showSection('esplora');
+    navLinks.forEach(l => l.classList.remove('active'));
+    document.querySelector('.nav-link[href="#esplora"]').classList.add('active');
+    
+    showStatus('Benvenuto! Modalità offline attiva.', 'success');
 }
 
 // Logout
@@ -275,13 +278,6 @@ window.selectCharacter = async function(characterId) {
         return;
     }
     
-    // Controlla tempo disponibile
-    const timeCheck = await checkUserTime();
-    if (!timeCheck.canChat) {
-        showTimeExpiredPopup();
-        return;
-    }
-    
     currentCharacter = AI_CHARACTERS[characterId];
     if (!currentCharacter) {
         console.error('Personaggio non trovato:', characterId);
@@ -289,7 +285,8 @@ window.selectCharacter = async function(characterId) {
         return;
     }
     
-    currentModel = timeCheck.model;
+    // MODALITÀ OFFLINE - Usa sempre premium model
+    currentModel = PREMIUM_MODEL;
     
     // Aggiorna UI conversazione
     characterNameDisplay.textContent = currentCharacter.name;
@@ -306,8 +303,8 @@ window.selectCharacter = async function(characterId) {
     mainHeader.style.display = 'none';
     conversationScreen.style.display = 'flex';
     
-    // Mostra il tempo disponibile
-    updateTimerDisplay((userTimeInfo.premium_minutes_remaining + userTimeInfo.standard_minutes_remaining) * 60);
+    // Mostra 20 minuti disponibili
+    updateTimerDisplay(20 * 60);
 };
 
 // Aggiorna tema colore per il personaggio
@@ -339,38 +336,20 @@ window.backToSelection = function() {
 
 // Check user time
 async function checkUserTime() {
-    try {
-        const response = await fetch(CHECK_TIME_API_ENDPOINT, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: currentUser.id })
-        });
-        
-        if (!response.ok) throw new Error('Errore verifica tempo');
-        
-        const data = await response.json();
-        userTimeInfo = data;
-        
-        return {
-            canChat: data.can_use_premium || data.can_use_standard,
-            model: data.can_use_premium ? PREMIUM_MODEL : STANDARD_MODEL,
-            remainingMinutes: data.can_use_premium ? 
-                data.premium_minutes_remaining : 
-                data.standard_minutes_remaining
-        };
-        
-    } catch (error) {
-        console.error('Errore verifica tempo:', error);
-        return { canChat: false };
-    }
+    // MODALITÀ OFFLINE - Sempre 20 minuti disponibili
+    return {
+        canChat: true,
+        model: PREMIUM_MODEL,
+        remainingMinutes: 20
+    };
 }
 
 // Timer management
 function startTimer() {
-    if (!userTimeInfo || isTimerRunning) return;
+    if (isTimerRunning) return;
     
     isTimerRunning = true;
-    let totalSeconds = (userTimeInfo.premium_minutes_remaining + userTimeInfo.standard_minutes_remaining) * 60;
+    let totalSeconds = 20 * 60; // MODALITÀ OFFLINE - Sempre 20 minuti
     totalSecondsUsed = 0;
     
     updateTimerDisplay(totalSeconds);
@@ -382,13 +361,14 @@ function startTimer() {
         if (totalSeconds <= 0) {
             stopTimer();
             endConversation();
-            showTimeExpiredPopup();
+            showStatus('Tempo scaduto! La conversazione è terminata.', 'info');
             return;
         }
         
-        // Cambia modello dopo 10 minuti
+        // Cambia modello dopo 10 minuti (opzionale in modalità offline)
         if (totalSecondsUsed === 600 && currentModel === PREMIUM_MODEL) {
-            switchToStandardModel();
+            // In modalità offline manteniamo sempre premium
+            // switchToStandardModel();
         }
         
         updateTimerDisplay(totalSeconds);
@@ -427,48 +407,14 @@ function updateTimerDisplay(seconds) {
 
 // Ottieni il contesto iniziale con memoria e istruzioni personaggio
 async function getInitialContext() {
-    try {
-        // Cerca conversazioni precedenti con questo personaggio
-        const memorySearch = await fetch(SEARCH_MEMORY_API_ENDPOINT, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                userId: currentUser.id,
-                aiCharacter: currentCharacter.id,
-                searchTerm: currentUser.full_name
-            })
-        });
-        
-        const memoryData = await memorySearch.json();
-        const memories = memoryData.memories || [];
-        
-        // Genera riassunto del contesto
-        const summaryResponse = await fetch(SUMMARY_API_ENDPOINT, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                userId: currentUser.id,
-                memories: memories.slice(0, 10) // Ultime 10 interazioni
-            })
-        });
-        
-        const summaryData = await summaryResponse.json();
-        
-        // Ottieni le istruzioni complete del personaggio
-        const characterInstructions = getFullInstructions(currentCharacter.id, currentUser.full_name);
-        
-        return {
-            summary: summaryData.summary || '',
-            instructions: characterInstructions || CHARACTER_INSTRUCTIONS[currentCharacter.id]
-        };
-        
-    } catch (error) {
-        console.error('Errore recupero contesto:', error);
-        return {
-            summary: '',
-            instructions: CHARACTER_INSTRUCTIONS[currentCharacter.id] || ''
-        };
-    }
+    // MODALITÀ OFFLINE - Non cerca memoria nel database
+    // Ottieni le istruzioni complete del personaggio con il nome utente
+    const characterInstructions = getFullInstructions(currentCharacter.id, currentUser.full_name);
+    
+    return {
+        summary: '', // Nessun riassunto in modalità offline
+        instructions: characterInstructions || CHARACTER_INSTRUCTIONS[currentCharacter.id] || ''
+    };
 }
 
 // Avvia conversazione
@@ -706,10 +652,6 @@ async function endConversation() {
         isActive = false;
         stopTimer();
         
-        // Calcola durata
-        const endTime = new Date();
-        const durationSeconds = totalSecondsUsed;
-        
         // Chiudi connessioni
         if (dc && dc.readyState === 'open') {
             dc.close();
@@ -729,82 +671,14 @@ async function endConversation() {
         thinkingIndicator.classList.remove('active');
         voiceWaves.classList.remove('active');
         
-        // Salva conversazione se c'è contenuto
-        if (currentConversation.length > 0) {
-            await saveConversationSummary(durationSeconds);
-            await updateUserTime(durationSeconds);
-        }
-        
+        // MODALITÀ OFFLINE - Non salva conversazioni
         showStatus('Conversazione terminata', 'success');
+        
+        // Reset conversazione corrente
+        currentConversation = [];
         
     } catch (error) {
         console.error('Errore terminazione conversazione:', error);
-    }
-}
-
-// Salva riassunto conversazione
-async function saveConversationSummary(durationSeconds) {
-    try {
-        // Estrai informazioni importanti
-        const extractResponse = await fetch(EXTRACT_INFO_API_ENDPOINT, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                userId: currentUser.id,
-                conversation: currentConversation
-            })
-        });
-        
-        if (extractResponse.ok) {
-            const extractedInfo = await extractResponse.json();
-            
-            // Salva informazioni importanti
-            if (extractedInfo.importantInfo && extractedInfo.importantInfo.length > 0) {
-                for (const info of extractedInfo.importantInfo) {
-                    await fetch(SAVE_IMPORTANT_INFO_API_ENDPOINT, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            userId: currentUser.id,
-                            ...info
-                        })
-                    });
-                }
-            }
-        }
-        
-        // Salva riassunto conversazione
-        await fetch(SAVE_SUMMARY_API_ENDPOINT, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                userId: currentUser.id,
-                aiCharacter: currentCharacter.id,
-                conversation: currentConversation,
-                duration: durationSeconds,
-                model: currentModel
-            })
-        });
-        
-    } catch (error) {
-        console.error('Errore salvataggio conversazione:', error);
-    }
-}
-
-// Aggiorna tempo utente
-async function updateUserTime(durationSeconds) {
-    try {
-        await fetch(UPDATE_TIME_API_ENDPOINT, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                userId: currentUser.id,
-                durationSeconds: durationSeconds,
-                model: currentModel
-            })
-        });
-    } catch (error) {
-        console.error('Errore aggiornamento tempo:', error);
     }
 }
 
@@ -853,50 +727,6 @@ function handleDisconnection() {
         endConversation();
     }
 }
-
-// Cambia a modello standard
-async function switchToStandardModel() {
-    currentModel = STANDARD_MODEL;
-    console.log('Passaggio al modello standard');
-    
-    if (dc && dc.readyState === 'open') {
-        const sessionUpdate = {
-            type: "session.update",
-            session: {
-                model: STANDARD_MODEL
-            }
-        };
-        dc.send(JSON.stringify(sessionUpdate));
-    }
-}
-
-// Mostra popup tempo scaduto
-function showTimeExpiredPopup() {
-    const popup = document.createElement('div');
-    popup.className = 'time-expired-popup glass-morphism';
-    popup.innerHTML = `
-        <div class="popup-content">
-            <h2>⏰ Tempo Terminato!</h2>
-            <p>Il tuo tempo giornaliero è finito.</p>
-            <p>Potrai parlare di nuovo tra <strong>24 ore</strong>.</p>
-            <p class="popup-message">Torna domani per nuove conversazioni straordinarie!</p>
-            <button class="btn btn-primary" onclick="closeTimeExpiredPopup()">OK</button>
-        </div>
-    `;
-    document.body.appendChild(popup);
-    
-    // Animazione entrata
-    setTimeout(() => popup.classList.add('show'), 10);
-}
-
-window.closeTimeExpiredPopup = function() {
-    const popup = document.querySelector('.time-expired-popup');
-    if (popup) {
-        popup.classList.remove('show');
-        setTimeout(() => popup.remove(), 300);
-    }
-    backToSelection();
-};
 
 // Mostra status
 function showStatus(message, type = 'info') {
@@ -1036,63 +866,4 @@ function initParticleAnimation() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
     });
-}
-
-// Aggiungi stili per il popup tempo scaduto
-const style = document.createElement('style');
-style.textContent = `
-.time-expired-popup {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.8);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 3000;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-}
-
-.time-expired-popup.show {
-    opacity: 1;
-}
-
-.popup-content {
-    text-align: center;
-    padding: 40px;
-    max-width: 400px;
-    animation: popup-enter 0.3s ease;
-}
-
-@keyframes popup-enter {
-    from {
-        transform: scale(0.8);
-        opacity: 0;
-    }
-    to {
-        transform: scale(1);
-        opacity: 1;
-    }
-}
-
-.popup-content h2 {
-    font-size: 2rem;
-    margin-bottom: 20px;
-    color: var(--secondary-color);
-}
-
-.popup-content p {
-    margin-bottom: 15px;
-    font-size: 1.1rem;
-}
-
-.popup-message {
-    color: var(--accent-color);
-    font-style: italic;
-    margin: 20px 0;
-}
-`;
-document.head.appendChild(style); 
+} 
