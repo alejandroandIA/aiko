@@ -81,7 +81,7 @@
 
         <!-- Sezione Esplora - Selezione per categorie -->
         <section id="esplora" class="section" style="display: none;">
-            <div class="explore-container" id="exploreContainer">
+            <div class="explore-container" id="aiSelectionContainer">
                 <div class="user-info glass-morphism">
                     <div class="user-avatar">👤</div>
                     <span id="userDisplay" class="user-name"></span>
@@ -242,7 +242,7 @@
                 
                 <div class="character-presence" id="characterPresence">
                     <div class="character-avatar-large" id="characterAvatarLarge">
-                        <!-- Avatar dinamico -->
+                        <canvas id="faceCanvas" width="300" height="300"></canvas>
                     </div>
                     <div class="character-aura" id="characterAura"></div>
                     <div class="voice-waves" id="voiceWaves">
