@@ -7,7 +7,7 @@
 // 4. Il token ha una scadenza limitata per sicurezza
 // Questo approccio mantiene la chiave API sicura sul server mentre permette connessioni dirette dal browser
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
     if (req.method === 'OPTIONS') {
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -33,7 +33,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "userId e aiCharacter sono richiesti" });
     }
 
-    const requestModel = model || 'gpt-4o-mini-realtime-preview-2024-12-17';
+    const requestModel = model || 'gpt-4o-mini';
 
     try {
         // Crea una sessione temporanea per ottenere un token effimero

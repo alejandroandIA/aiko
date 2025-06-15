@@ -7,7 +7,7 @@ const setCorsHeaders = (res) => {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 };
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
     setCorsHeaders(res);
 
     if (req.method === 'OPTIONS') {
@@ -62,7 +62,7 @@ export default async function handler(req, res) {
         }
 
         // Aggiorna minuti usati
-        const isPremium = model === 'gpt-4o-realtime-preview-2024-12-17';
+        const isPremium = model === 'gpt-4o';
         const updateData = isPremium
             ? { premium_minutes_used: timeTracking.premium_minutes_used + minutesUsed }
             : { standard_minutes_used: timeTracking.standard_minutes_used + minutesUsed };

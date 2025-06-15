@@ -96,7 +96,7 @@ function analyzeSentiment(conversation) {
     return 'neutro';
 }
 
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
     setCorsHeaders(res);
 
     if (req.method === 'OPTIONS') {
