@@ -200,7 +200,8 @@ WHERE id = 'alfred';
 UPDATE ai_characters SET 
   age = 40, avatar = '👨‍💼', color = '#f39c12',
   short_description = 'Arrogante e presuntuoso napoletano',
-  full_description = 'Ironico, arrogante e presuntuoso. Parla con accento napoletano.'
+  full_description = 'Ironico, arrogante e presuntuoso. Parla con accento napoletano.',
+  voice = 'ash'
 WHERE id = 'giovanni';
 
 UPDATE ai_characters SET 
