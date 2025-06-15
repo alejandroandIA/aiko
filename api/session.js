@@ -33,29 +33,30 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "userId e aiCharacter sono richiesti" });
     }
 
-    const requestModel = model || "gpt-4o-realtime-preview-2024-12-17";
+    const requestModel = model || 'gpt-4o-mini-realtime-preview-2024-12-17';
 
     try {
         // Crea una sessione temporanea per ottenere un token effimero
-        const openAIResponse = await fetch("https://api.openai.com/v1/realtime/sessions", {
-            method: "POST",
+        const sessionResponse = await fetch('https://api.openai.com/v1/realtime/sessions', {
+            method: 'POST',
             headers: {
-                "Authorization": `Bearer ${OPENAI_API_KEY}`,
-                "Content-Type": "application/json",
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${OPENAI_API_KEY}`
             },
             body: JSON.stringify({
                 model: requestModel,
-                voice: "shimmer" // Default, verrà sovrascritto dal client
-            }),
+                voice: "alloy",
+                instructions: `Sei ${aiCharacter}. Ricordi le conversazioni passate con l'utente. Contesto: ${contextSummary || 'Nessun contesto iniziale.'}`
+            })
         });
 
-        if (!openAIResponse.ok) {
-            const errorData = await openAIResponse.json().catch(() => ({ error: "Impossibile parsare l'errore" }));
-            console.error("Errore dalla API OpenAI:", openAIResponse.status, errorData);
-            return res.status(openAIResponse.status).json({ error: "Errore durante la creazione della sessione", details: errorData });
+        if (!sessionResponse.ok) {
+            const errorData = await sessionResponse.json().catch(() => ({ error: "Impossibile parsare l'errore" }));
+            console.error("Errore dalla API OpenAI:", sessionResponse.status, errorData);
+            return res.status(sessionResponse.status).json({ error: "Errore durante la creazione della sessione", details: errorData });
         }
 
-        const data = await openAIResponse.json();
+        const data = await sessionResponse.json();
 
         if (!data.client_secret || !data.client_secret.value) {
             console.error("Risposta da OpenAI non contiene client_secret:", data);

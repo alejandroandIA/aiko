@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // API Configuration
     const PREMIUM_MODEL = "gpt-4o-realtime-preview-2024-12-17";
     const STANDARD_MODEL = "gpt-4o-mini-realtime-preview-2024-12-17";
-    const REALTIME_API_URL = "https://api.openai.com/v1/realtime";
+    const REALTIME_API_URL = "https://api.openai.com/v1/realtime/sessions";
 
     // API Endpoints
     const SESSION_API_ENDPOINT = "/api/session";
@@ -1095,22 +1095,28 @@ IMPORTANTE:
             statusDiv.textContent = "Stabilendo connessione WebRTC...";
             await pc.setLocalDescription();
             
-            const sdpResponse = await fetch(`${REALTIME_API_URL}?model=${currentModel}`, {
+            const sdpResponse = await fetch(REALTIME_API_URL, {
                 method: "POST",
                 headers: {
                     "Authorization": `Bearer ${ephemeralKey}`,
-                    "Content-Type": "application/sdp",
+                    "Content-Type": "application/json",
                 },
-                body: pc.localDescription.sdp,
+                body: JSON.stringify({
+                    sdp: pc.localDescription.sdp,
+                    model: currentModel
+                }),
             });
             
             if (!sdpResponse.ok) {
-                throw new Error(`Errore SDP: ${sdpResponse.status}`);
+                const errorText = await sdpResponse.text();
+                throw new Error(`Errore SDP: ${sdpResponse.status} - ${errorText}`);
             }
+            
+            const sdpAnswer = await sdpResponse.json();
             
             const answer = {
                 type: "answer",
-                sdp: await sdpResponse.text(),
+                sdp: sdpAnswer.sdp,
             };
             
             await pc.setRemoteDescription(answer);
