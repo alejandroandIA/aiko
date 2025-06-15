@@ -1,4 +1,32 @@
-# CI SONO IO - Conversazioni Autentiche con AI
+# CI SONO IO - Conversazioni Straordinarie con Persone Vere
+
+## 🔌 MODALITÀ OFFLINE ATTIVA
+
+**CI SONO IO v2.0 ora funziona SENZA database Supabase!**
+
+### Cosa funziona in modalità offline:
+- ✅ Login con nome e cognome (salvato solo in memoria locale)
+- ✅ 9 sezioni tematiche con 40+ personaggi
+- ✅ Conversazioni complete con OpenAI Realtime API
+- ✅ La IA conosce il tuo nome e lo usa nelle conversazioni
+- ✅ Timer di 20 minuti per ogni conversazione
+- ✅ Tutte le animazioni e l'interfaccia vivace
+
+### Cosa NON funziona in modalità offline:
+- ❌ Memoria delle conversazioni passate
+- ❌ Salvataggio delle conversazioni
+- ❌ Limite giornaliero (puoi parlare quanto vuoi)
+
+### Come funziona:
+1. Inserisci nome e cognome
+2. Scegli una sezione tematica
+3. Seleziona un personaggio
+4. Parla per 20 minuti
+5. La IA sa chi sei ma non ricorda le conversazioni precedenti
+
+---
+
+## Panoramica
 
 Una piattaforma innovativa per conversazioni vocali naturali con intelligenze artificiali che hanno personalità uniche e ricordano tutto di te.
 
