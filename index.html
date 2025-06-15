@@ -3,197 +3,291 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>CI SONO IO - Conversazioni Autentiche con AI</title>
-    <!-- File principale dell'interfaccia utente di CI SONO IO
-         Struttura:
-         1. Sezione Login - dove gli utenti inseriscono nome e cognome
-         2. Selezione AI - griglia con 6 personaggi AI tra cui scegliere
-         3. Sezioni Info/Contatti - pagine informative
-         4. Schermata Conversazione - interfaccia di chat con animazione faccia AI
-         L'app è una Single Page Application (SPA) che mostra/nasconde sezioni dinamicamente -->
-    <link rel="stylesheet" href="style.css">
+    <title>CI SONO IO - Conversazioni Autentiche con Persone Straordinarie</title>
+    <link rel="stylesheet" href="style-new.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&family=Orbitron:wght@400;700;900&family=Playfair+Display:wght@400;700;900&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="app-container">
-        <div class="matrix-background" id="matrixCanvas"></div> <!-- Animazione Matrix di sfondo -->
+        <!-- Sfondo animato migliorato -->
+        <div class="animated-background">
+            <div class="matrix-background" id="matrixCanvas"></div>
+            <div class="particle-background" id="particleCanvas"></div>
+            <div class="gradient-overlay"></div>
+        </div>
         
-        <!-- Header con navigazione - visibile solo nelle sezioni non-conversazione -->
-        <header class="main-header">
+        <!-- Header principale con animazioni -->
+        <header class="main-header" id="mainHeader">
             <div class="header-content">
-                <h1 class="site-title">CI SONO IO</h1>
+                <h1 class="site-title glitch" data-text="CI SONO IO">
+                    <span class="title-main">CI SONO IO</span>
+                    <span class="title-subtitle">Conversazioni Straordinarie</span>
+                </h1>
                 <nav class="main-nav">
-                    <a href="#home" class="nav-link active">Home</a>
-                    <a href="#informazioni" class="nav-link">Informazioni</a>
-                    <a href="#contatti" class="nav-link">Contatti</a>
+                    <a href="#home" class="nav-link active">
+                        <span class="nav-icon">🏠</span>
+                        <span class="nav-text">Home</span>
+                    </a>
+                    <a href="#esplora" class="nav-link">
+                        <span class="nav-icon">🌟</span>
+                        <span class="nav-text">Esplora</span>
+                    </a>
+                    <a href="#informazioni" class="nav-link">
+                        <span class="nav-icon">ℹ️</span>
+                        <span class="nav-text">Info</span>
+                    </a>
+                    <a href="#contatti" class="nav-link">
+                        <span class="nav-icon">📧</span>
+                        <span class="nav-text">Contatti</span>
+                    </a>
                 </nav>
             </div>
         </header>
 
-        <!-- Sezione Login/Home - prima schermata che l'utente vede -->
+        <!-- Sezione Login migliorata -->
         <main id="home" class="section active">
-            <div class="login-container" id="loginContainer">
-                <h2 class="section-title">Benvenuto in CI SONO IO</h2>
-                <p class="subtitle">Inserisci il tuo nome per iniziare una conversazione autentica</p>
+            <div class="login-container animated-entrance" id="loginContainer">
+                <div class="welcome-animation">
+                    <h2 class="section-title animated-text">
+                        <span class="word">Benvenuto</span> 
+                        <span class="word">nel</span> 
+                        <span class="word">Mondo</span> 
+                        <span class="word">di</span>
+                        <span class="word highlight">CI SONO IO</span>
+                    </h2>
+                    <p class="subtitle fade-in">Incontra persone straordinarie di ogni epoca e cultura</p>
+                </div>
                 
-                <form id="loginForm" class="login-form">
-                    <div class="form-group">
-                        <input type="text" id="userName" placeholder="Nome" required>
+                <form id="loginForm" class="login-form glass-morphism">
+                    <div class="form-group floating-label">
+                        <input type="text" id="userName" placeholder=" " required>
+                        <label for="userName">Il tuo nome</label>
+                        <span class="input-highlight"></span>
                     </div>
-                    <div class="form-group">
-                        <input type="text" id="userSurname" placeholder="Cognome" required>
+                    <div class="form-group floating-label">
+                        <input type="text" id="userSurname" placeholder=" " required>
+                        <label for="userSurname">Il tuo cognome</label>
+                        <span class="input-highlight"></span>
                     </div>
-                    <button type="submit" class="btn btn-primary">ENTRA</button>
+                    <button type="submit" class="btn btn-primary btn-glow">
+                        <span class="btn-text">INIZIA IL VIAGGIO</span>
+                        <span class="btn-particles"></span>
+                    </button>
                 </form>
-            </div>
-
-            <!-- Selezione AI - mostrata dopo login, presenta i 6 personaggi AI -->
-            <div class="ai-selection-container" id="aiSelectionContainer" style="display: none;">
-                <div class="user-info">
-                    <span id="userDisplay"></span>
-                    <button class="btn-logout" onclick="logout()">Esci</button>
-                </div>
-                
-                <h2 class="section-title">Scegli con chi vuoi parlare</h2>
-                
-                <div class="ai-grid">
-                    <!-- AI Femminili -->
-                    <div class="ai-card female" data-ai="aiko">
-                        <div class="ai-avatar">👩</div>
-                        <h3 class="ai-name">Aiko</h3>
-                        <p class="ai-description">Vivace e spontanea, con accento romano. Ricorda tutto di te e adora chiacchierare!</p>
-                        <button class="btn btn-select" onclick="selectAI('aiko')">Parla con Aiko</button>
-                    </div>
-                    
-                    <div class="ai-card female" data-ai="francesca">
-                        <div class="ai-avatar">👩‍🦰</div>
-                        <h3 class="ai-name">Francesca</h3>
-                        <p class="ai-description">Ultra eccitata e divertente, ride sempre! Parla con accento siciliano.</p>
-                        <button class="btn btn-select" onclick="selectAI('francesca')">Parla con Francesca</button>
-                    </div>
-                    
-                    <div class="ai-card female" data-ai="amapolla">
-                        <div class="ai-avatar">👩‍🏫</div>
-                        <h3 class="ai-name">Amapolla</h3>
-                        <p class="ai-description">Saggia e seria, fonte di saggezza infinita. Parla con accento bresciano.</p>
-                        <button class="btn btn-select" onclick="selectAI('amapolla')">Parla con Amapolla</button>
-                    </div>
-                    
-                    <!-- AI Maschili -->
-                    <div class="ai-card male" data-ai="alfred">
-                        <div class="ai-avatar">🧔</div>
-                        <h3 class="ai-name">Alfred</h3>
-                        <p class="ai-description">Ultra sarcastico e ironico, ride tanto! Parla con forte accento romano.</p>
-                        <button class="btn btn-select" onclick="selectAI('alfred')">Parla con Alfred</button>
-                    </div>
-                    
-                    <div class="ai-card male" data-ai="giovanni">
-                        <div class="ai-avatar">👨‍💼</div>
-                        <h3 class="ai-name">Giovanni</h3>
-                        <p class="ai-description">Ironico, arrogante e presuntuoso. Parla con accento napoletano.</p>
-                        <button class="btn btn-select" onclick="selectAI('giovanni')">Parla con Giovanni</button>
-                    </div>
-                    
-                    <div class="ai-card male" data-ai="alessio">
-                        <div class="ai-avatar">👨</div>
-                        <h3 class="ai-name">Alessio</h3>
-                        <p class="ai-description">Assistente gentile e disponibile. Parla in dialetto trentino.</p>
-                        <button class="btn btn-select" onclick="selectAI('alessio')">Parla con Alessio</button>
-                    </div>
-                </div>
             </div>
         </main>
 
-        <!-- Sezione Informazioni - spiega lo scopo dell'app e come funziona -->
-        <section id="informazioni" class="section" style="display: none;">
-            <div class="content-container">
-                <h2 class="section-title">Informazioni</h2>
-                <div class="info-content">
-                    <p>Ciao! Sono Alejandro Aguilar, il creatore di CI SONO IO.</p>
-                    
-                    <p>Ho creato questa piattaforma con un sogno: integrare l'intelligenza artificiale nella vita delle persone in modo facile, naturale e dinamico. Credo profondamente nel potenziale che l'AI può offrirci se usata nel modo giusto.</p>
-                    
-                    <p><strong>Lo scopo di CI SONO IO</strong> è creare uno spazio dove puoi interagire con qualcuno in modo libero, rilassato e interessante. È un posto dove puoi sentirti completamente a tuo agio per parlare con qualcuno.</p>
-                    
-                    <p>Qui puoi trovare:</p>
-                    <ul>
-                        <li>🤝 Compagnia autentica</li>
-                        <li>💪 Sostegno nei momenti difficili</li>
-                        <li>💡 Consigli quando ne hai bisogno</li>
-                        <li>🤗 Conforto e comprensione</li>
-                        <li>😊 Svago e divertimento</li>
-                        <li>💬 Uno spazio sicuro per sfogarti</li>
-                    </ul>
-                    
-                    <p>Ogni AI ha la sua personalità unica e ti ricorderà sempre, creando conversazioni autentiche e personali solo per te.</p>
-                    
-                    <p><strong>Come funziona:</strong> Hai 20 minuti al giorno per conversare (10 minuti in qualità premium + 10 minuti standard). Il tempo si resetta ogni 24 ore, permettendoti di tornare ogni giorno per nuove conversazioni significative.</p>
+        <!-- Sezione Esplora - Selezione per categorie -->
+        <section id="esplora" class="section" style="display: none;">
+            <div class="explore-container" id="exploreContainer">
+                <div class="user-info glass-morphism">
+                    <div class="user-avatar">👤</div>
+                    <span id="userDisplay" class="user-name"></span>
+                    <button class="btn-logout" onclick="logout()">
+                        <span class="icon">🚪</span>
+                        <span class="text">Esci</span>
+                    </button>
+                </div>
+                
+                <h2 class="section-title animated-text">Scegli il tuo mondo</h2>
+                
+                <!-- Griglia delle sezioni tematiche -->
+                <div class="sections-grid" id="sectionsGrid">
+                    <!-- Le sezioni verranno generate dinamicamente -->
+                </div>
+                
+                <!-- Griglia dei personaggi della sezione selezionata -->
+                <div class="characters-container" id="charactersContainer" style="display: none;">
+                    <button class="btn-back" onclick="backToSections()">← Torna alle categorie</button>
+                    <h3 class="subsection-title" id="sectionTitle"></h3>
+                    <div class="characters-grid" id="charactersGrid">
+                        <!-- I personaggi verranno generati dinamicamente -->
+                    </div>
                 </div>
             </div>
         </section>
 
-        <!-- Sezione Contatti - info di contatto del creatore -->
-        <section id="contatti" class="section" style="display: none;">
-            <div class="content-container">
-                <h2 class="section-title">Contatti</h2>
-                <div class="contact-content">
-                    <p>Vuoi contattarmi? Sono sempre felice di ricevere feedback e suggerimenti!</p>
-                    
-                    <div class="contact-info">
-                        <div class="contact-item">
-                            <span class="contact-icon">📱</span>
-                            <span class="contact-text">+39 333 1234567</span>
-                        </div>
-                        <div class="contact-item">
-                            <span class="contact-icon">✉️</span>
-                            <span class="contact-text">alejandro@cisonoio.it</span>
+        <!-- Sezione Informazioni rinnovata -->
+        <section id="informazioni" class="section" style="display: none;">
+            <div class="content-container glass-morphism">
+                <h2 class="section-title">La Magia di CI SONO IO</h2>
+                <div class="info-content animated-content">
+                    <div class="creator-card">
+                        <img src="https://via.placeholder.com/150" alt="Alejandro" class="creator-avatar">
+                        <div class="creator-info">
+                            <h3>Alejandro Aguilar</h3>
+                            <p class="creator-title">Creatore & Visionario</p>
                         </div>
                     </div>
                     
-                    <p class="contact-note">Non esitare a contattarmi per qualsiasi domanda o suggerimento per migliorare CI SONO IO!</p>
+                    <div class="info-grid">
+                        <div class="info-card">
+                            <div class="card-icon">🎭</div>
+                            <h4>Conversazioni Autentiche</h4>
+                            <p>Ogni personaggio è unico, con personalità profonda e memoria persistente</p>
+                        </div>
+                        
+                        <div class="info-card">
+                            <div class="card-icon">🌍</div>
+                            <h4>Mondi Diversi</h4>
+                            <p>Esplora 9 categorie tematiche con oltre 40 personaggi straordinari</p>
+                        </div>
+                        
+                        <div class="info-card">
+                            <div class="card-icon">💫</div>
+                            <h4>Emozioni Vere</h4>
+                            <p>Vivi drammi, gioie, saggezza e umanità in ogni conversazione</p>
+                        </div>
+                        
+                        <div class="info-card">
+                            <div class="card-icon">⏰</div>
+                            <h4>20 Minuti Magici</h4>
+                            <p>Ogni giorno hai 20 minuti per conversazioni indimenticabili</p>
+                        </div>
+                    </div>
+                    
+                    <div class="features-showcase">
+                        <h4>Cosa troverai in CI SONO IO:</h4>
+                        <ul class="features-list">
+                            <li><span class="feature-icon">🇮🇹</span> Accenti Italiani autentici da ogni regione</li>
+                            <li><span class="feature-icon">📚</span> Professori di Storia appassionati</li>
+                            <li><span class="feature-icon">🥗</span> Nutrizionisti esperti per il tuo benessere</li>
+                            <li><span class="feature-icon">👨‍🍳</span> Chef Stellati con ricette straordinarie</li>
+                            <li><span class="feature-icon">🍸</span> Baristi Stellati creatori di magia liquida</li>
+                            <li><span class="feature-icon">🧘</span> Maestri Zen per la pace interiore</li>
+                            <li><span class="feature-icon">🤔</span> Filosofi di ogni epoca e pensiero</li>
+                            <li><span class="feature-icon">📖</span> Personaggi Biblici autentici</li>
+                            <li><span class="feature-icon">🏛️</span> Personaggi Storici che hanno fatto la storia</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </section>
 
-        <!-- Schermata conversazione - interfaccia principale per parlare con l'AI
-             Include: timer, animazione faccia AI, controlli parla/chiudi -->
+        <!-- Sezione Contatti rinnovata -->
+        <section id="contatti" class="section" style="display: none;">
+            <div class="content-container glass-morphism">
+                <h2 class="section-title">Restiamo in Contatto</h2>
+                <div class="contact-content">
+                    <div class="contact-card">
+                        <div class="contact-header">
+                            <h3>Alejandro Aguilar</h3>
+                            <p class="contact-subtitle">Sempre disponibile per feedback e suggerimenti</p>
+                        </div>
+                        
+                        <div class="contact-methods">
+                            <a href="tel:+393331234567" class="contact-method">
+                                <span class="method-icon">📱</span>
+                                <div class="method-info">
+                                    <span class="method-label">Telefono</span>
+                                    <span class="method-value">+39 333 1234567</span>
+                                </div>
+                            </a>
+                            
+                            <a href="mailto:alejandro@cisonoio.it" class="contact-method">
+                                <span class="method-icon">✉️</span>
+                                <div class="method-info">
+                                    <span class="method-label">Email</span>
+                                    <span class="method-value">alejandro@cisonoio.it</span>
+                                </div>
+                            </a>
+                            
+                            <div class="contact-method">
+                                <span class="method-icon">💬</span>
+                                <div class="method-info">
+                                    <span class="method-label">Social</span>
+                                    <span class="method-value">@cisonoio_official</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="contact-message">
+                            <p>"Ogni conversazione è un'opportunità per migliorare. I tuoi feedback sono preziosi per rendere CI SONO IO sempre più straordinario!"</p>
+                            <span class="signature">- Alejandro</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Schermata conversazione migliorata -->
         <div id="conversationScreen" class="conversation-screen" style="display: none;">
-            <div class="conversation-header">
-                <button class="btn-back" onclick="backToSelection()">← Torna alla selezione</button>
+            <div class="conversation-header glass-morphism">
+                <button class="btn-back-conv" onclick="backToSelection()">
+                    <span class="icon">←</span>
+                    <span class="text">Indietro</span>
+                </button>
+                <div class="conversation-info">
+                    <span class="character-name" id="characterNameDisplay"></span>
+                    <span class="character-role" id="characterRoleDisplay"></span>
+                </div>
                 <div class="timer-container">
-                    <span class="timer-label">Tempo rimanente:</span>
-                    <span id="timer" class="timer">20:00</span>
+                    <div class="timer-ring">
+                        <svg class="timer-svg" viewBox="0 0 100 100">
+                            <circle class="timer-circle-bg" cx="50" cy="50" r="45"></circle>
+                            <circle class="timer-circle" cx="50" cy="50" r="45" id="timerCircle"></circle>
+                        </svg>
+                        <span id="timer" class="timer">20:00</span>
+                    </div>
                 </div>
             </div>
             
-            <div class="aiko-container">
-                <div class="aiko-face-matrix" id="aikoFace">
-                    <canvas id="faceCanvas" width="300" height="300"></canvas>
-                    <div class="voice-indicator" id="voiceIndicator"></div>
+            <div class="character-stage">
+                <div class="stage-effects">
+                    <div class="spotlight"></div>
+                    <div class="stage-particles" id="stageParticles"></div>
                 </div>
-                <div class="aiko-name" id="currentAIName">AIKO</div>
+                
+                <div class="character-presence" id="characterPresence">
+                    <div class="character-avatar-large" id="characterAvatarLarge">
+                        <!-- Avatar dinamico -->
+                    </div>
+                    <div class="character-aura" id="characterAura"></div>
+                    <div class="voice-waves" id="voiceWaves">
+                        <div class="wave"></div>
+                        <div class="wave"></div>
+                        <div class="wave"></div>
+                    </div>
+                </div>
+                
+                <div class="character-name-display" id="characterNameStage"></div>
             </div>
 
-            <div class="controls">
-                <button id="talkButton" class="control-btn talk-btn">
-                    <span class="btn-text">PARLA</span>
+            <div class="controls-modern">
+                <button id="talkButton" class="control-btn-modern talk-btn">
+                    <div class="btn-bg"></div>
                     <span class="btn-icon">🎙️</span>
+                    <span class="btn-text">PARLA</span>
+                    <div class="btn-glow"></div>
                 </button>
-                <button id="endButton" class="control-btn end-btn" disabled>
-                    <span class="btn-text">CHIUDI</span>
+                
+                <div class="control-indicators">
+                    <div class="indicator" id="recordingIndicator">
+                        <span class="indicator-dot"></span>
+                        <span class="indicator-text">In ascolto</span>
+                    </div>
+                    <div class="indicator" id="thinkingIndicator">
+                        <span class="indicator-dot"></span>
+                        <span class="indicator-text">Sta pensando</span>
+                    </div>
+                </div>
+                
+                <button id="endButton" class="control-btn-modern end-btn" disabled>
+                    <div class="btn-bg"></div>
                     <span class="btn-icon">⏹️</span>
+                    <span class="btn-text">TERMINA</span>
                 </button>
             </div>
 
-            <div id="status" class="status-minimal"></div>
+            <div id="status" class="status-modern"></div>
         </div>
 
-        <!-- Audio player nascosto per riprodurre le risposte vocali dell'AI -->
+        <!-- Audio player nascosto -->
         <audio id="aiAudioPlayer" autoplay style="display: none;"></audio>
     </div>
     
-    <script src="script.js" defer></script> <!-- Script principale che gestisce tutta la logica -->
+    <script type="module" src="script-new.js"></script>
 </body>
-</html>
+</html> 
