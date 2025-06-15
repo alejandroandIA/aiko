@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+const { createClient } = require('@supabase/supabase-js');
 
 // Funzione per impostare gli header CORS
 const setCorsHeaders = (res) => {

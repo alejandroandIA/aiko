@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+const OpenAI = require('openai');
 
 // Funzione per impostare gli header CORS
 const setCorsHeaders = (res) => {

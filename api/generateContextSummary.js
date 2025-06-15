@@ -7,8 +7,8 @@
 // 4. Il riassunto include: chi è l'utente, argomenti ricorrenti, tono delle conversazioni
 // Questo permette all'AI di "ricordare" l'utente e personalizzare ogni conversazione
 
-import { createClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
+const { createClient } = require('@supabase/supabase-js');
+const OpenAI = require('openai');
 
 // Funzione per impostare gli header CORS
 const setCorsHeaders = (res) => {

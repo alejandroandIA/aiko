@@ -4,8 +4,8 @@
 // Se la ricerca testuale non produce risultati, utilizza gli embedding di OpenAI 
 // per trovare corrispondenze semantiche nei riassunti delle conversazioni.
 // Combina e restituisce tutti i risultati trovati.
-import { createClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
+const { createClient } = require('@supabase/supabase-js');
+const OpenAI = require('openai');
 // import { USER_NAME, AI_NAME } from '../src/config/aiConfig.mjs'; // File non trovato, uso valori diretti
 const USER_NAME = 'Tu';
 const AI_NAME = 'Aiko';

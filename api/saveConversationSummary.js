@@ -13,8 +13,8 @@
 // 4. Pulisce le conversazioni temporanee più vecchie di 48 ore
 // Questo permette all'AI di ricordare le conversazioni passate senza salvare tutto il testo
 
-import { createClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
+const { createClient } = require('@supabase/supabase-js');
+const OpenAI = require('openai');
 
 // Funzione per impostare gli header CORS
 const setCorsHeaders = (res) => {
